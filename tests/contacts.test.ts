@@ -14,6 +14,7 @@ describe('опубликованные деловые контакты', () => {
   it('отклоняет скрытые контакты, опасные URL и неполные телефоны', () => {
     expect(normalizeContact({ kind: 'email', value: 'info@*****' })).toBeNull();
     expect(normalizeContact({ kind: 'phone', value: '+7 (495) ***-**-67' })).toBeNull();
+    expect(normalizeContact({ kind: 'phone', value: '+44 1234567890**' })).toBeNull();
     expect(normalizeContact({ kind: 'website', value: 'https://127.0.0.1/' })).toBeNull();
     expect(normalizeContact({ kind: 'website', value: 'https://user:password@example.org/' })).toBeNull();
   });

@@ -10,7 +10,9 @@ export function normalizeContact(contact: Contact): Contact | null {
   if (contact.kind === 'phone' || contact.kind === 'fax') {
     const phone = value.replace(/^tel:/i, '').trim();
     const extension = phone.match(/(?:доб\.?|ext\.?|;ext=|#)\s*(\d{1,8})\s*$/i)?.[1];
-    let digits = phone.replace(/(?:доб\.?|ext\.?|;ext=|#).*$/i, '').replace(/\D/g, '');
+    const number = phone.replace(/(?:доб\.?|ext\.?|;ext=|#).*$/i, '');
+    if (/[*•●_xх]/i.test(number)) return null;
+    let digits = number.replace(/\D/g, '');
     if (digits.length === 11 && digits.startsWith('8')) digits = '7' + digits.slice(1);
     if (digits.length < 10 || digits.length > 15 || /^0+$/.test(digits)) return null;
     return { kind: contact.kind, value: `+${digits}${extension ? ` доб. ${extension}` : ''}` };
