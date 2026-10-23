@@ -3,6 +3,9 @@ on:
   push:
     paths:
       - scripts/diagnose-network.mjs
+      - scripts/check-live.mjs
+      - electron/free-registry.ts
+      - electron/main.ts
       - .github/workflows/network.yml
   workflow_dispatch:
 permissions:
