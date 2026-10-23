@@ -60,7 +60,7 @@ async function snapshot(contents: WebContents, sourceId: string, query: string, 
   return sourceResultSchema.parse({ ...raw, sourceId, contacts, message, url: contents.getURL(), fetchedAt: new Date().toISOString() });
 }
 async function followBusiness(contents: WebContents, company: Company) {
-  const followed = await contents.executeJavaScript(`(${followCompanyRecord.toString()})(${JSON.stringify({ inn: company.inn, ogrn: company.ogrn })})`);
+  const followed = await contents.executeJavaScript(`(${followCompanyRecord.toString()})(${JSON.stringify({ inn: company.inn, ogrn: company.ogrn, name: company.name, fullName: company.fullName })})`);
   if (!followed) return;
   await pause(1500);
   const deadline = Date.now() + 8000;

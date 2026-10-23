@@ -10,14 +10,22 @@ try {
   await app.firstWindow();
   const results = await app.evaluate(async ({ BrowserWindow }) => {
     const results = [];
-    for (const url of ['https://checko.ru/search?query=7707083893', 'https://www.rusprofile.ru/search?query=7707083893', 'https://www.list-org.com/search?type=inn&val=7707083893', 'https://companies.rbc.ru/search/?query=7707083893']) {
+    for (const url of ['https://checko.ru/search?query=7707083893', 'https://www.rusprofile.ru/search?query=7707083893', 'https://www.list-org.com/search?type=inn&val=7736207543', 'https://companies.rbc.ru/search/?query=7707083893']) {
       const view = new BrowserWindow({ show: false, webPreferences: { sandbox: true, contextIsolation: true, nodeIntegration: false, partition: 'persist:dosye-official' } });
       let timer;
       try {
         await Promise.race([view.loadURL(url), new Promise((_, reject) => { timer = setTimeout(() => reject(new Error('load timeout')), 20000); })]);
         await new Promise(resolve => setTimeout(resolve, 2000));
-        const data = await view.webContents.executeJavaScript(`(() => ({url:location.href,title:document.title,identity:document.body.innerText.includes('7707083893'),links:[...document.querySelectorAll('a[href]')].map(a=>({url:a.href,text:a.innerText.slice(0,100)})).filter(a=>/\\/company\\/|\\/id\\/|\\/ip\\//.test(a.url)).slice(0,8),sections:[...document.querySelectorAll('[id],[class]')].filter(e=>/contact/i.test(e.id+' '+e.className)&&e.innerText?.length<8000).slice(0,8).map(e=>({tag:e.tagName,id:e.id,className:e.className,text:e.innerText.slice(0,1800)})),structured:[...document.querySelectorAll('script[type="application/ld+json"]')].map(s=>s.textContent.slice(0,4000))}))()`);
+        const data = await view.webContents.executeJavaScript(`(() => ({url:location.href,title:document.title,identity:/7707083893|7736207543/.test(document.body.innerText),links:[...document.querySelectorAll('a[href]')].map(a=>({url:a.href,text:a.innerText.slice(0,100)})).filter(a=>/\\/company\\/|\\/id\\/|\\/ip\\//.test(a.url)).slice(0,8),sections:[...document.querySelectorAll('[id],[class]')].filter(e=>/contact/i.test(e.id+' '+e.className)&&e.innerText?.length<8000).slice(0,8).map(e=>({tag:e.tagName,id:e.id,className:e.className,text:e.innerText.slice(0,1800)})),structured:[...document.querySelectorAll('script[type="application/ld+json"]')].map(s=>s.textContent.slice(0,4000))}))()`);
         results.push(data);
+        if (url.includes('list-org.com')) {
+          const link = data.links.find(link => /^ООО\s+[«"']?ЯНДЕКС[»"']?$/i.test(link.text));
+          if (link) {
+            await view.loadURL(link.url);
+            await new Promise(resolve => setTimeout(resolve, 1500));
+            results.push(await view.webContents.executeJavaScript(`(() => ({url:location.href,title:document.title,h1:document.querySelector('h1')?.innerText,identity:/7736207543/.test(document.body.innerText),contactRows:[...document.querySelectorAll('p,tr,dl,div.c')].filter(e=>/телефон|факс|e-mail|электронная почта|сайт/i.test(e.innerText)&&e.innerText.length<6000).slice(0,12).map(e=>e.outerHTML.slice(0,2600))}))()`));
+          }
+        }
       } catch (error) { results.push({ url, error: error.message }); }
       finally { clearTimeout(timer); view.destroy(); }
     }
