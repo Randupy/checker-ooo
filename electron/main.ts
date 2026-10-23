@@ -100,11 +100,11 @@ else {
     handle('extract:get', async (input: unknown) => {
       const company = companySchema.parse(input);
       const bytes = await registry.extract(company);
-      return { base64: Buffer.from(bytes).toString('base64'), fileName: `Выписка-ФНС-${company.inn}.pdf` };
+      return { base64: Buffer.from(bytes).toString('base64'), fileName: `Выписка-ФНС-${company.inn || company.ogrn}.pdf` };
     });
     handle('extract:export', async (input: unknown) => {
       const company = companySchema.parse(input);
-      const result = await dialog.showSaveDialog(window!, { title: 'Сохранить выписку ФНС', defaultPath: `Выписка-ФНС-${company.inn}.pdf`, filters: [{ name: 'PDF', extensions: ['pdf'] }] });
+      const result = await dialog.showSaveDialog(window!, { title: 'Сохранить выписку ФНС', defaultPath: `Выписка-ФНС-${company.inn || company.ogrn}.pdf`, filters: [{ name: 'PDF', extensions: ['pdf'] }] });
       if (result.canceled || !result.filePath) return false;
       await writeFile(result.filePath, await registry.extract(company));
       return true;
@@ -113,7 +113,7 @@ else {
       const company = companySchema.parse(input);
       const format = z.enum(['json', 'csv']).parse(kind);
       const result = await dialog.showSaveDialog(window!, {
-        title: 'Экспорт карточки', defaultPath: `Досье-${company.inn || 'пример'}.${format}`,
+        title: 'Экспорт карточки', defaultPath: `Досье-${company.inn || company.ogrn || 'пример'}.${format}`,
         filters: [{ name: format === 'csv' ? 'Таблица CSV' : 'Данные JSON', extensions: [format] }],
       });
       if (result.canceled || !result.filePath) return false;

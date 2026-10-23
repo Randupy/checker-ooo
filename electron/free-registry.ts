@@ -6,11 +6,12 @@ export class RegistryError extends Error {
   constructor(public kind: 'captcha' | 'unavailable', message: string, public retryable = false) { super(message); }
 }
 const rowSchema = z.object({
-  i: z.string(), o: z.string().optional(), n: z.string(), c: z.string().optional(),
+  // Some genuine historical records have an OGRN but no published INN.
+  i: z.string().nullish().transform(value => value ?? ''), o: z.string().optional(), n: z.string(), c: z.string().optional(),
   a: z.string().optional(), g: z.string().optional(), p: z.string().optional(),
   r: z.string().optional(), e: z.string().optional(), k: z.string().optional(),
   t: z.string().optional(), cnt: z.union([z.number(), z.string()]).optional(),
-}).passthrough();
+}).passthrough().refine(row => Boolean(row.i || row.o), 'В записи отсутствуют и ИНН, и ОГРН.');
 const rowsSchema = z.object({ rows: z.array(rowSchema).max(1000) });
 export type RegistryRow = z.infer<typeof rowSchema>;
 export type Fetcher = (url: string, options?: RequestInit) => Promise<Response>;

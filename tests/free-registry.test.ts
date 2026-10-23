@@ -30,6 +30,17 @@ describe('бесплатный протокол ФНС', () => {
     expect(service.acceptRows({ rows: [{ ...registryRow, cnt: 3 }, { ...registryRow, i: '500100732259', cnt: 3 }] }, 'Тест', 1).hasMore).toBe(true);
     expect(service.acceptRows({ rows: [{ ...registryRow, cnt: 3 }] }, 'Тест', 2).hasMore).toBe(false);
   });
+  it('сохраняет всю выдачу, если у одной исторической записи нет опубликованного ИНН', async () => {
+    const { i: _inn, ...withoutInn } = registryRow;
+    const fetcher = vi.fn<typeof fetch>()
+      .mockResolvedValueOnce(json({ t: 'search_test_token' }))
+      .mockResolvedValueOnce(json({ rows: [registryRow, { ...withoutInn, o: '1027700132196' }] }));
+    const result = await new FreeRegistry(fetcher).search('ооо "бетонстандарт"');
+    expect(result.companies).toHaveLength(2);
+    expect(result.companies[1]).toMatchObject({ inn: '', ogrn: '1027700132196', source: 'egrul', id: 'fns:1027700132196:' });
+    expect(result.companies[0].id).not.toBe(result.companies[1].id);
+    expect(() => new FreeRegistry(vi.fn()).acceptRows({ rows: [{ n: 'Запись без идентификаторов' }] }, 'Тест')).toThrow('распознать');
+  });
   it('пустой успешный ответ отличает от CAPTCHA, HTML и ошибки сети', async () => {
     const fetcher = vi.fn<typeof fetch>().mockResolvedValueOnce(json({ t: 'search_test_token' })).mockResolvedValueOnce(json({ rows: [] }));
     expect(await new FreeRegistry(fetcher).search('Тест')).toMatchObject({ companies: [], total: 0, mode: 'free' });
