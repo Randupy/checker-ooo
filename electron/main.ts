@@ -86,17 +86,20 @@ else {
     handle('favorite:toggle', (input: unknown) => store.toggleFavorite(companySchema.parse(input)));
     handle('company:remember', (input: unknown) => store.remember(companySchema.parse(input)));
     handle('history:clear', () => store.clearHistory());
-    handle('source:open', (id: unknown, query: unknown, bounds: unknown) => workspace.open(z.string().max(50).parse(id), z.string().max(250).parse(query), boundsSchema.parse(bounds)));
+    handle('source:open', (id: unknown, query: unknown, bounds: unknown, reference: unknown) => workspace.open(z.string().max(50).parse(id), z.string().max(250).parse(query), boundsSchema.parse(bounds), z.object({ company: companySchema.optional(), url: z.string().url().max(3000).optional() }).optional().parse(reference)));
     handle('source:resize', (bounds: unknown) => workspace.resize(boundsSchema.parse(bounds)));
     handle('source:close', () => workspace.close());
     handle('source:capture', () => workspace.capture());
     handle('research:cancel', () => workspace.cancelCollection());
-    handle('research:collect', async (input: unknown) => {
+    const collect = async (input: unknown, contactsOnly = false) => {
       const company = companySchema.parse(input);
-      const results = await workspace.collect(company);
-      await store.remember({ ...company, research: results });
+      const results = await workspace.collect(company, contactsOnly);
+      const saved = store.get().recent.find(item => item.id === company.id) ?? company;
+      await store.remember({ ...saved, research: [...(saved.research ?? []).filter(item => !results.some(result => result.sourceId === item.sourceId)), ...results] });
       return results;
-    });
+    };
+    handle('research:collect', (input: unknown) => collect(input));
+    handle('contacts:collect', (input: unknown) => collect(input, true));
     handle('extract:get', async (input: unknown) => {
       const company = companySchema.parse(input);
       const bytes = await registry.extract(company);

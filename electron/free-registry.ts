@@ -70,7 +70,8 @@ export class FreeRegistry {
   constructor(private fetcher: Fetcher, private delay: (ms: number) => Promise<void> = pause) {}
   private async request(path: string, options?: RequestInit): Promise<Response> {
     try {
-      const response = await this.fetcher(this.base + path, { ...options, credentials: 'include', signal: AbortSignal.timeout(18000) });
+      const signal = options?.signal ? AbortSignal.any([options.signal, AbortSignal.timeout(18000)]) : AbortSignal.timeout(18000);
+      const response = await this.fetcher(this.base + path, { ...options, credentials: 'include', signal });
       if (response.url) {
         const canonical = new URL(response.url);
         if (canonical.protocol === 'https:' && ['egrul.nalog.ru', 'egrul.nalog.gov.ru'].includes(canonical.hostname)) this.base = canonical.origin + '/';
@@ -114,17 +115,18 @@ export class FreeRegistry {
     const offset = (page - 1) * (this.pageSizes.get(query) ?? 20);
     return { companies, query, mode: 'free', page, total, hasMore: companies.length > 0 && offset + companies.length < total };
   }
-  async search(input: string, page = 1): Promise<SearchResponse> {
+  async search(input: string, page = 1, signal?: AbortSignal): Promise<SearchResponse> {
     const { query } = parseQuery(input);
     if (!Number.isSafeInteger(page) || page < 1 || page > 1000) throw new Error('Некорректный номер страницы.');
     // POST works without loading the landing page. That GET can stall independently
     // and used to prevent every search, even when the search endpoint was healthy.
     const body = new URLSearchParams({ query, page: String(page), region: '', vyp3CaptchaToken: '', PreventChromeAutocomplete: '' });
-    const options = { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: body.toString() };
+    const options = { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: body.toString(), signal };
     let started: Record<string, unknown>;
     try { started = await this.json('', options); }
     catch (error) {
       if (!(error instanceof RegistryError) || !error.retryable) throw error;
+      signal?.throwIfAborted();
       const original = this.base;
       this.base = OFFICIAL_ORIGINS.find(origin => origin !== original)!;
       try { started = await this.json('', options); }
@@ -136,28 +138,28 @@ export class FreeRegistry {
     }
     const searchToken = token(started.t);
     for (let attempt = 0; attempt < 12; attempt++) {
-      const result = await this.json(`search-result/${searchToken}?r=${Date.now()}`);
+      const result = await this.json(`search-result/${searchToken}?r=${Date.now()}`, { signal });
       if (result.status !== 'wait') return this.acceptRows(result, query, page);
       await this.delay(750);
     }
     throw new RegistryError('unavailable', 'ФНС ещё обрабатывает запрос. Повторите поиск немного позже.');
   }
-  async extract(company: Company): Promise<Uint8Array> {
+  async extract(company: Company, signal?: AbortSignal): Promise<Uint8Array> {
     if (company.source === 'demo') throw new Error('У вымышленной организации нет выписки ФНС.');
     let document = this.documents.get(company.ogrn || company.inn);
     if (!document || Date.now() - document.at > 10 * 60_000) {
-      const result = await this.search(company.ogrn || company.inn);
+      const result = await this.search(company.ogrn || company.inn, 1, signal);
       const exact = result.companies.find(item => item.inn === company.inn && (!company.ogrn || item.ogrn === company.ogrn));
       if (!exact) throw new Error('ФНС не нашла организацию с этими реквизитами.');
       document = this.documents.get(exact.ogrn || exact.inn);
     }
     if (!document) throw new Error('ФНС не предоставила ссылку на выписку для этой записи.');
-    const requested = await this.json(`vyp-request/${document.token}?r=${Date.now()}`);
+    const requested = await this.json(`vyp-request/${document.token}?r=${Date.now()}`, { signal });
     const documentToken = token(requested.t);
     for (let attempt = 0; attempt < 16; attempt++) {
-      const status = await this.json(`vyp-status/${documentToken}?r=${Date.now()}`);
+      const status = await this.json(`vyp-status/${documentToken}?r=${Date.now()}`, { signal });
       if (status.status === 'ready') {
-        const response = await this.request(`vyp-download/${documentToken}`);
+        const response = await this.request(`vyp-download/${documentToken}`, { signal });
         const chunks: Uint8Array[] = [];
         let length = 0;
         const reader = response.body?.getReader();

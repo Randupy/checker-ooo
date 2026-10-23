@@ -44,6 +44,7 @@ export function readSourcePage(options: { query: string; submitted: boolean }) {
   const captchaVisible = Array.from(document.querySelectorAll('[class*=captcha],iframe[src*=captcha],input[name*=captcha],input[id*=captcha],img[src*=captcha]')).some(visible);
   const challenge = captchaVisible || /подтвердите.{0,50}(человек|робот)|докажите.{0,30}не робот|доступ ограничен|проверка браузера|access denied|verify you are human|проверка безопасности/i.test(text);
   const empty = /ничего не найдено|по вашему запросу.{0,100}не найден|записей не найдено|сведения не найдены|результатов: 0|найдено записей: 0/i.test(text);
+  const unavailable = /^(?:ошибка|error)\s*(?:403|404|500|502|503)\b/i.test((document.title + '\n' + text).trim());
   const tables = Array.from(document.querySelectorAll('table')).filter(visible).slice(0, 6).map(table =>
     Array.from(table.querySelectorAll('tr')).slice(0, 50).map(row => Array.from(row.querySelectorAll('th,td')).slice(0, 12).map(cell => (cell.textContent ?? '').trim().slice(0, 1000))).filter(row => row.some(Boolean))
   ).filter(table => table.length);
@@ -54,7 +55,7 @@ export function readSourcePage(options: { query: string; submitted: boolean }) {
   });
   const matchingTable = tables.some(table => table.some(row => row.some(cell => cell.toLocaleLowerCase('ru').includes(options.query.toLocaleLowerCase('ru')))));
   // A populated input or the mere presence of a search form is not a result.
-  const status = challenge ? 'captcha' : options.submitted && empty ? 'empty' : options.submitted && queryInResults && (matchingTable || resultBlocks) ? 'ready' : 'needs_input';
+  const status = challenge ? 'captcha' : unavailable ? 'unavailable' : options.submitted && empty ? 'empty' : options.submitted && queryInResults && (matchingTable || resultBlocks) ? 'ready' : 'needs_input';
   const originalTables = Array.from(document.querySelectorAll('table')).filter(visible);
   const truncated = body.length > 45000 || originalTables.length > 6 || originalTables.some(table => table.querySelectorAll('tr').length > 50 || Array.from(table.querySelectorAll('tr')).some(row => row.querySelectorAll('td,th').length > 12 || Array.from(row.querySelectorAll('td,th')).some(cell => (cell.textContent ?? '').trim().length > 1000)));
   return { text, tables, title: document.title.slice(0, 500), status, truncated };

@@ -1,11 +1,11 @@
 import { useEffect, useRef, useState } from 'react';
 import { X, RefreshCw, Save, LoaderCircle, Globe2, AlertCircle } from 'lucide-react';
 import { bridge } from './bridge';
-import type { SourceResult, SourceViewState } from './shared/model';
+import type { Company, SourceResult, SourceViewState } from './shared/model';
 import { SOURCES } from './shared/sources';
 
-export default function SourceWorkspace({ sourceId, query, onClose, onCapture }: {
-  sourceId: string; query: string; onClose(): void; onCapture(result: SourceResult): void;
+export default function SourceWorkspace({ sourceId, query, company, referenceUrl, onClose, onCapture }: {
+  sourceId: string; query: string; company?: Company; referenceUrl?: string; onClose(): void; onCapture(result: SourceResult): void;
 }) {
   const container = useRef<HTMLDivElement>(null);
   const [state, setState] = useState<SourceViewState>({ sourceId, title: '', url: '', loading: true });
@@ -19,13 +19,13 @@ export default function SourceWorkspace({ sourceId, query, onClose, onCapture }:
     const area = container.current!;
     const bounds = () => { const rect = area.getBoundingClientRect(); return { x: rect.x, y: rect.y, width: rect.width, height: rect.height }; };
     setError(''); setState({ sourceId, title: '', url: '', loading: true });
-    void bridge.openSource(sourceId, query, bounds()).catch(err => { if (!disposed) setError((err as Error).message); });
+    void bridge.openSource(sourceId, query, bounds(), { company, url: referenceUrl }).catch(err => { if (!disposed) setError((err as Error).message); });
     const resize = () => { void bridge.resizeSource(bounds()).catch(() => {}); };
     const observer = new ResizeObserver(resize);
     observer.observe(area);
     window.addEventListener('resize', resize);
     return () => { disposed = true; unsubscribe(); observer.disconnect(); window.removeEventListener('resize', resize); void bridge.closeSource(); };
-  }, [sourceId, query, attempt]);
+  }, [sourceId, query, company?.id, referenceUrl, attempt]);
   async function capture() {
     setSaving(true);
     try { onCapture(await bridge.captureSource()); onClose(); }

@@ -2,10 +2,14 @@ import { BrowserWindow, WebContentsView, session, type WebContents } from 'elect
 import { SOURCES, getSourceUrl } from '../src/shared/sources';
 import { sourceResultSchema, type Company, type SourceBounds, type SourceResult, type SourceViewState, type SearchResponse } from '../src/shared/model';
 import { fillSourceSearch, followAccountingRecord, readSourcePage } from '../src/shared/source-dom';
+import { followCompanyRecord, readBusinessContacts } from '../src/shared/contact-dom';
+import { cleanContacts } from '../src/shared/contacts';
+import { extractRegistryContacts } from './extract-contacts';
 import type { FreeRegistry } from './free-registry';
 
 export const SOURCE_PARTITION = 'persist:dosye-official';
 const pause = (ms: number) => new Promise<void>(resolve => setTimeout(resolve, ms));
+const CONTACT_SOURCES = new Set(['rusprofile', 'checko', 'listorg']);
 export function sourceUrl(id: string, query: string): string {
   if (id === 'accounting') return `https://bo.nalog.gov.ru/search?query=${encodeURIComponent(query)}`;
   return getSourceUrl(id, query);
@@ -38,22 +42,36 @@ async function bounded<T>(operation: Promise<T>, timeout = 18000): Promise<T> {
 async function fill(contents: WebContents, id: string, query: string): Promise<boolean> {
   return contents.executeJavaScript(`(${fillSourceSearch.toString()})(${JSON.stringify({ id, query })})`);
 }
-async function snapshot(contents: WebContents, sourceId: string, query: string, submitted: boolean): Promise<SourceResult> {
+async function snapshot(contents: WebContents, sourceId: string, query: string, submitted: boolean, company?: Company): Promise<SourceResult> {
   const raw = await contents.executeJavaScript(`(${readSourcePage.toString()})(${JSON.stringify({ query, submitted })})`);
+  let contacts;
+  if (company && CONTACT_SOURCES.has(sourceId) && !['captcha', 'unavailable'].includes(raw.status)) {
+    const result = await contents.executeJavaScript(`(${readBusinessContacts.toString()})(${JSON.stringify({ inn: company.inn, ogrn: company.ogrn, name: company.name, fullName: company.fullName })})`);
+    if (result.verified) { contacts = cleanContacts(result.contacts); raw.status = 'ready'; }
+  }
   const messages: Record<string, string> = {
     ready: 'Получены сведения со страницы источника. Полнота зависит от опубликованных данных.',
     empty: 'Источник сообщил, что по этому запросу записи не найдены.',
     captcha: 'Источник требует проверку. Пройдите её в окне источника внутри приложения.',
     needs_input: 'Нужны дополнительные параметры или подтверждение поиска. Продолжите в окне источника внутри приложения.',
+    unavailable: 'Источник вернул страницу ошибки. Контакты и другие сведения не проверены.',
   };
   const message = (messages[raw.status] ?? messages.needs_input) + (raw.truncated ? ' Снимок сокращён по размеру; полную выдачу и следующие страницы смотрите во встроенном окне.' : '');
-  return sourceResultSchema.parse({ ...raw, sourceId, message, url: contents.getURL(), fetchedAt: new Date().toISOString() });
+  return sourceResultSchema.parse({ ...raw, sourceId, contacts, message, url: contents.getURL(), fetchedAt: new Date().toISOString() });
+}
+async function followBusiness(contents: WebContents, company: Company) {
+  const followed = await contents.executeJavaScript(`(${followCompanyRecord.toString()})(${JSON.stringify({ inn: company.inn, ogrn: company.ogrn })})`);
+  if (!followed) return;
+  await pause(1500);
+  const deadline = Date.now() + 8000;
+  while (!contents.isDestroyed() && contents.isLoadingMainFrame() && Date.now() < deadline) await pause(200);
 }
 export class SourceWorkspace {
   private view: WebContentsView | null = null;
-  private current: { id: string; query: string; submitted: boolean } | null = null;
+  private current: { id: string; query: string; submitted: boolean; company?: Company } | null = null;
   private collection = false;
   private cancelled = false;
+  private collectionAbort = new AbortController();
   private hidden = new Set<BrowserWindow>();
   constructor(private parent: BrowserWindow, private registry: FreeRegistry, private registryResult: (result: SearchResponse) => void) {
     session.fromPartition(SOURCE_PARTITION).setPermissionRequestHandler((_contents, _permission, callback) => callback(false));
@@ -76,16 +94,19 @@ export class SourceWorkspace {
   }
   cancelCollection() {
     this.cancelled = true;
+    this.collectionAbort.abort();
     for (const hidden of this.hidden) if (!hidden.isDestroyed()) hidden.destroy();
     this.hidden.clear();
   }
   dispose() { this.cancelCollection(); this.close(); }
-  async open(id: string, query: string, bounds: SourceBounds) {
-    const url = sourceUrl(id, query); // Validates the source before touching the current view.
+  async open(id: string, query: string, bounds: SourceBounds, reference?: { company?: Company; url?: string }) {
+    const search = sourceUrl(id, query); // Validates the source before touching the current view.
+    const url = reference?.url ?? search;
+    if (!permittedNavigation(id, url)) throw new Error('Адрес не принадлежит выбранному источнику.');
     this.close();
     const view = new WebContentsView({ webPreferences: { partition: SOURCE_PARTITION, sandbox: true, contextIsolation: true, nodeIntegration: false } });
     this.view = view;
-    this.current = { id, query, submitted: false };
+    this.current = { id, query, submitted: Boolean(reference?.url), company: reference?.company };
     const current = this.current;
     guard(view.webContents, id);
     this.parent.contentView.addChildView(view);
@@ -97,7 +118,8 @@ export class SourceWorkspace {
       await bounded(view.webContents.loadURL(url));
       if (this.current !== current) return;
       await pause(500);
-      if (!view.webContents.isDestroyed()) current.submitted = await fill(view.webContents, id, query);
+      if (!view.webContents.isDestroyed() && !reference?.url) current.submitted = await fill(view.webContents, id, query);
+      if (this.current === current && current.company && CONTACT_SOURCES.has(id)) await followBusiness(view.webContents, current.company);
       if (id === 'accounting') {
         await pause(2500);
         if (this.current === current && !view.webContents.isDestroyed()) await view.webContents.executeJavaScript(`(${followAccountingRecord.toString()})(${JSON.stringify(query)})`);
@@ -131,15 +153,17 @@ export class SourceWorkspace {
   async capture(): Promise<SourceResult> {
     if (!this.view || !this.current) throw new Error('Сначала откройте источник в приложении.');
     // A manual search may have run after the initial autofill.
-    return snapshot(this.view.webContents, this.current.id, this.current.query, true);
+    return snapshot(this.view.webContents, this.current.id, this.current.query, true, this.current.company);
   }
-  async collect(company: Company): Promise<SourceResult[]> {
+  async collect(company: Company, contactsOnly = false): Promise<SourceResult[]> {
     if (company.source === 'demo') throw new Error('Для вымышленного примера проверка в реестрах не выполняется.');
     if (this.collection) throw new Error('Сбор сведений уже выполняется.');
     this.collection = true;
     this.cancelled = false;
+    this.collectionAbort = new AbortController();
     const results: SourceResult[] = [];
-    const sources = [...SOURCES];
+    const priority = ['egrul', 'listorg', 'checko', 'rusprofile'];
+    const sources = SOURCES.filter(source => !contactsOnly || priority.includes(source.id)).sort((a, b) => (priority.includes(a.id) ? priority.indexOf(a.id) : 100) - (priority.includes(b.id) ? priority.indexOf(b.id) : 100));
     try {
       // Two independent public pages at a time; no proxy rotation or CAPTCHA solvers.
       await Promise.all(Array.from({ length: 2 }, async () => {
@@ -148,6 +172,14 @@ export class SourceWorkspace {
           if (source.id === 'egrul' && company.source === 'egrul') {
             const fields = [['Наименование', company.fullName], ['ИНН', company.inn], ['ОГРН / ОГРНИП', company.ogrn], ['КПП', company.kpp], ['Адрес', company.address], ['Руководитель', company.manager]];
             const result: SourceResult = { sourceId: source.id, status: 'ready', title: 'ЕГРЮЛ / ЕГРИП ФНС', message: 'Регистрационная запись получена прямым поиском ФНС. Полные разделы доступны в выписке.', text: fields.map(([key, value]) => `${key}: ${value || 'Нет данных в поисковой записи'}`).join('\n'), tables: [fields], url: 'https://egrul.nalog.ru/', fetchedAt: company.fetchedAt };
+            try {
+              const bytes = await this.registry.extract(company, AbortSignal.any([this.collectionAbort.signal, AbortSignal.timeout(25000)]));
+              if (this.cancelled || this.parent.isDestroyed()) continue;
+              result.contacts = await extractRegistryContacts(bytes, () => this.cancelled);
+              result.message += result.contacts.length ? ' Электронная почта извлечена из официальной выписки.' : ' В первых разделах выписки опубликованная электронная почта не найдена.';
+              for (const contact of result.contacts) result.text += `\nЭлектронная почта (выписка): ${contact.value}`;
+            } catch { result.message += ' Не удалось проверить контакты в PDF-выписке. Можно повторить сбор или открыть выписку отдельно.'; }
+            if (this.cancelled || this.parent.isDestroyed()) continue;
             results.push(result);
             this.parent.webContents.send('research:result', { result, companyId: company.id });
             continue;
@@ -167,7 +199,8 @@ export class SourceWorkspace {
               const followed = await hidden.webContents.executeJavaScript(`(${followAccountingRecord.toString()})(${JSON.stringify(query)})`);
               if (followed) await pause(2500);
             }
-            result = await snapshot(hidden.webContents, source.id, query, submitted);
+            if (CONTACT_SOURCES.has(source.id)) await followBusiness(hidden.webContents, company);
+            result = await snapshot(hidden.webContents, source.id, query, submitted, company);
           } catch {
             result = { sourceId: source.id, status: 'unavailable', title: source.name, message: 'Не удалось получить ответ. Это не означает отсутствия сведений.', text: '', tables: [], url, fetchedAt: new Date().toISOString() };
           } finally { this.hidden.delete(hidden); if (!hidden.isDestroyed()) hidden.destroy(); }

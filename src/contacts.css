@@ -1,0 +1,22 @@
+.contacts-panel { margin-bottom: 24px; }
+.contacts-heading { display: flex; align-items: center; justify-content: space-between; gap: 18px; margin-bottom: 23px; }
+.contacts-heading h2 { display: flex; align-items: center; gap: 9px; font-size: 15px; color: #34465f; }
+.contact-count { display: inline-grid; place-items: center; min-width: 23px; height: 23px; padding: 0 7px; border-radius: 7px; background: #edf1ff; color: #5267df; font-size: 11px; }
+.contacts-heading p { color: #8b9ab0; font-size: 11px; line-height: 1.7; margin-top: 6px; }
+.contacts-heading .button { font-size: 11px; flex-shrink: 0; }
+.contact-columns { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 20px; }
+.contact-column { min-width: 0; border: 1px solid #e5ebf5; border-radius: 9px; padding: 17px; background: #fcfdff; }
+.contact-column h3 { display: flex; align-items: center; gap: 8px; color: #5d7190; font-size: 12px; font-weight: 600; margin-bottom: 16px; }
+.contact-column h3 svg { color: #7d92c3; }
+.contact-column h3 > span { margin-left: auto; color: #9caac1; font-size: 10px; }
+.contact-value + .contact-value { margin-top: 14px; padding-top: 14px; border-top: 1px solid #e8edf5; }
+.contact-value > div:first-child { display: flex; align-items: flex-start; gap: 7px; }
+.contact-value > div:first-child > span { flex: 1; min-width: 0; overflow-wrap: anywhere; color: #344f7b; font-size: 13px; line-height: 1.8; font-weight: 500; }
+.contact-value .icon-button { width: 25px; height: 25px; flex-shrink: 0; color: #8396b8; }
+.contact-origins { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 5px; }
+.contact-origins button { font-size: 10px; display: inline-flex; align-items: center; gap: 3px; }
+.contact-value time { font-size: 9px; color: #9cabc0; display: block; margin-top: 5px; }
+.contact-empty { min-height: 38px; display: flex; align-items: center; gap: 7px; color: #9daac0; font-size: 11px; line-height: 1.8; }
+.contacts-footnote { color: #98a6bd; font-size: 10px; line-height: 1.9; margin-top: 18px; }
+@media (max-width: 1100px) { .contact-columns { grid-template-columns: 1fr; gap: 12px; } .contact-column { padding: 14px 17px; } .contact-column h3 { margin-bottom: 8px; } }
+@media (max-width: 700px) { .contacts-heading { align-items: flex-start; flex-direction: column; } .contacts-heading .button { width: 100%; } }

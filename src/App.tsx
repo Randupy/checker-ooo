@@ -14,6 +14,7 @@ import { version as appVersion } from '../package.json';
 import SourceWorkspace from './SourceWorkspace';
 import ResearchPanel from './ResearchPanel';
 import ExtractPanel from './ExtractPanel';
+import ContactsPanel from './ContactsPanel';
 
 type Page = 'search' | 'favorites' | 'history' | 'sources' | 'settings';
 type Tab = 'overview' | 'sources' | 'raw' | 'extract';
@@ -61,7 +62,7 @@ export default function App() {
   const [toast, setToast] = useState('');
   const [help, setHelp] = useState(false);
   const [confirmClear, setConfirmClear] = useState(false);
-  const [sourceWindow, setSourceWindow] = useState<{ id: string; query: string } | null>(null);
+  const [sourceWindow, setSourceWindow] = useState<{ id: string; query: string; referenceUrl?: string } | null>(null);
   const [collectingId, setCollectingId] = useState<string | null>(null);
   const searchRef = useRef<HTMLInputElement>(null);
   const helpCloseRef = useRef<HTMLButtonElement>(null);
@@ -118,14 +119,14 @@ export default function App() {
   async function openCompany(item: Company) {
     setCompany(item); setTab('overview');
     try { mergeState(await bridge.remember(item)); } catch (err) { notify(message(err)); }
-    if (state.desktop && item.source !== 'demo' && !item.research?.length && !collectingId) void collect(item);
+    if (state.desktop && item.source !== 'demo' && !item.research?.some(result => result.contacts !== undefined) && !collectingId) void collect(item);
   }
-  async function collect(item: Company) {
+  async function collect(item: Company, contactsOnly = false) {
     if (collectingId) return;
     setCollectingId(item.id);
     try {
-      const research = await bridge.collectSources(item);
-      setCompany(current => current?.id === item.id ? { ...current, research } : current);
+      const research = await (contactsOnly ? bridge.collectContacts(item) : bridge.collectSources(item));
+      setCompany(current => current?.id === item.id ? { ...current, research: [...(current.research ?? []).filter(source => !research.some(result => result.sourceId === source.sourceId)), ...research] } : current);
       setState(await bridge.getState());
     } catch (err) { notify(message(err)); }
     finally { setCollectingId(null); }
@@ -215,6 +216,7 @@ export default function App() {
           </section>
           <div className="dossier-tabs"><div role="tablist" aria-label="Данные организации">{([{ id: 'overview', label: 'Обзор' }, { id: 'sources', label: 'Сводка источников' }, { id: 'extract', label: 'Выписка ФНС' }, { id: 'raw', label: 'Данные источника' }] as const).map(item => <button role="tab" aria-selected={tab === item.id} className={tab === item.id ? 'active' : ''} key={item.id} onClick={() => setTab(item.id)}>{item.label}{item.id === 'sources' && <span>{SOURCES.length}</span>}</button>)}</div><span className="updated-label"><Clock3 size={13} />Получено {date(company.fetchedAt)}</span></div>
           {tab === 'overview' && <>
+            <ContactsPanel company={company} collecting={collectingId === company.id} disabled={!state.desktop || Boolean(collectingId)} onCollect={() => void collect(company, true)} onCancel={() => void bridge.cancelCollection()} onCopy={value => void copy(value)} onSource={source => source.sourceId === 'egrul' ? setTab('extract') : setSourceWindow({ id: source.sourceId, query: company.inn || company.ogrn || company.name, referenceUrl: source.url })} />
             <div className="dossier-grid"><section className="panel details-panel"><div className="panel-heading"><h2>Основные сведения</h2><span className="tiny-badge">{company.source === 'demo' ? 'Пример' : company.source === 'egrul' ? 'ФНС России' : 'Архив'}</span></div>
               <dl className="details-list"><Detail label="Полное наименование" value={company.fullName} /><Detail label="ИНН" value={company.inn} copyValue={copy} /><Detail label={company.type === 'LEGAL' ? 'ОГРН' : 'ОГРНИП'} value={company.ogrn} copyValue={copy} />{company.type === 'LEGAL' && <Detail label="КПП" value={company.kpp} copyValue={copy} />}<Detail label="Дата регистрации" value={date(company.registeredAt)} icon={<CalendarDays size={15} />} /><Detail label="Юридический адрес" value={company.address} icon={<MapPin size={15} />} /><Detail label="Основной ОКВЭД" value={company.okved} icon={<BriefcaseBusiness size={15} />} />{company.type === 'LEGAL' && <Detail label="Уставный капитал" value={money(company.capital)} />}{company.liquidatedAt && <Detail label="Дата ликвидации" value={date(company.liquidatedAt)} />}</dl>
             </section><div className="dossier-side"><section className="panel manager-panel"><div className="panel-heading"><h2>{company.type === 'LEGAL' ? 'Руководитель' : 'Предприниматель'}</h2><UserRound size={17} /></div><div className="person-avatar"><UserRound size={25} /></div><h3>{company.type === 'INDIVIDUAL' ? company.name : company.manager || 'Нет данных'}</h3><p>{company.managerPost || (company.type === 'LEGAL' ? 'Не предоставлено источником' : 'Индивидуальный предприниматель')}</p></section>
@@ -275,7 +277,7 @@ export default function App() {
         </>}
       </main>
     </div>
-    {sourceWindow && <SourceWorkspace sourceId={sourceWindow.id} query={sourceWindow.query} onClose={() => setSourceWindow(null)} onCapture={saveCaptured} />}
+    {sourceWindow && <SourceWorkspace sourceId={sourceWindow.id} query={sourceWindow.query} company={company ?? undefined} referenceUrl={sourceWindow.referenceUrl} onClose={() => setSourceWindow(null)} onCapture={saveCaptured} />}
     {toast && <div className="toast" role="status"><CheckCircle2 size={18} /><span>{toast}</span><button onClick={() => setToast('')} aria-label="Закрыть уведомление"><X size={15} /></button></div>}
     {help && <div className="modal-overlay" onClick={event => { if (event.target === event.currentTarget) { setHelp(false); helpTriggerRef.current?.focus(); } }}><section className="help-modal" role="dialog" aria-modal="true" aria-labelledby="help-title" onKeyDown={event => {
       if (event.key === 'Escape') { setHelp(false); helpTriggerRef.current?.focus(); }

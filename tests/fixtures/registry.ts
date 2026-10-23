@@ -5,8 +5,8 @@ export const registryRow = {
   r: '20.06.1991', k: 'ul', t: 'document_test_token_001', cnt: '2',
 };
 
-export function minimalPdf(): string {
-  const content = 'BT /F1 16 Tf 50 750 Td (FNS extract test document) Tj ET';
+export function minimalPdf(text = 'FNS extract test document'): string {
+  const content = `BT /F1 16 Tf 50 750 Td (${text.replace(/[\\()]/g, '\\$&')}) Tj ET`;
   const objects = [
     '<< /Type /Catalog /Pages 2 0 R >>',
     '<< /Type /Pages /Kids [3 0 R] /Count 1 >>',

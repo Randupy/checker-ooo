@@ -45,6 +45,7 @@ const preview: Bridge = {
   async resizeSource() {}, async closeSource() {}, async cancelCollection() {},
   async captureSource() { throw new Error('Откройте настольное приложение для получения сведений.'); },
   async collectSources() { throw new Error('Сбор сведений доступен в настольном приложении.'); },
+  async collectContacts() { throw new Error('Поиск контактов доступен в настольном приложении.'); },
   async getExtract() { throw new Error('Загрузка выписки доступна в настольном приложении без API-ключей.'); },
   async exportExtract() { throw new Error('Загрузка выписки доступна в настольном приложении.'); },
   onSourceState: () => () => {}, onResearchResult: () => () => {}, onRegistryResults: () => () => {},

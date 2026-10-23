@@ -1,5 +1,10 @@
 import { z } from 'zod';
 
+export const contactSchema = z.object({
+  kind: z.enum(['email', 'phone', 'website']),
+  value: z.string().min(1).max(2000),
+});
+export type Contact = z.infer<typeof contactSchema>;
 export const sourceResultSchema = z.object({
   sourceId: z.string().max(50),
   status: z.enum(['ready', 'empty', 'captcha', 'needs_input', 'unavailable']),
@@ -10,6 +15,7 @@ export const sourceResultSchema = z.object({
   url: z.string().max(3000),
   fetchedAt: z.string().datetime(),
   truncated: z.boolean().optional(),
+  contacts: z.array(contactSchema).max(60).optional(),
 });
 export type SourceResult = z.infer<typeof sourceResultSchema>;
 export interface SourceBounds { x: number; y: number; width: number; height: number }
@@ -72,11 +78,12 @@ export interface Bridge {
   toggleFavorite(company: Company): Promise<SavedState>;
   remember(company: Company): Promise<SavedState>;
   clearHistory(): Promise<SavedState>;
-  openSource(id: string, query: string, bounds?: SourceBounds): Promise<void>;
+  openSource(id: string, query: string, bounds?: SourceBounds, reference?: { company?: Company; url?: string }): Promise<void>;
   resizeSource(bounds: SourceBounds): Promise<void>;
   closeSource(): Promise<void>;
   captureSource(): Promise<SourceResult>;
   collectSources(company: Company): Promise<SourceResult[]>;
+  collectContacts(company: Company): Promise<SourceResult[]>;
   cancelCollection(): Promise<void>;
   getExtract(company: Company): Promise<{ base64: string; fileName: string }>;
   exportExtract(company: Company): Promise<boolean>;

@@ -10,7 +10,7 @@ try {
   await app.firstWindow();
   const results = await app.evaluate(async ({ BrowserWindow }) => {
     const results = [];
-    for (const url of ['https://checko.ru/search?query=7707083893', 'https://www.rusprofile.ru/search?query=7707083893']) {
+    for (const url of ['https://checko.ru/search?query=7707083893', 'https://www.rusprofile.ru/search?query=7707083893', 'https://www.list-org.com/search?type=inn&val=7707083893', 'https://companies.rbc.ru/search/?query=7707083893']) {
       const view = new BrowserWindow({ show: false, webPreferences: { sandbox: true, contextIsolation: true, nodeIntegration: false, partition: 'persist:dosye-official' } });
       let timer;
       try {

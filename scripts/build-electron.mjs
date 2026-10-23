@@ -8,5 +8,5 @@ await build({
   target: 'node22',
   outdir: 'dist-electron',
   outExtension: { '.js': '.cjs' },
-  external: ['electron'],
+  external: ['electron', 'unpdf'],
 });

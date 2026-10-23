@@ -14,7 +14,7 @@ test('главный экран, проверка номера, поиск бе�
   await input.press('Enter');
   await expect(page.getByText('Это веб-предпросмотр.', { exact: false })).toBeVisible();
   await page.getByRole('button', { name: 'Источники данных', exact: true }).click();
-  await expect(page.locator('.source-card')).toHaveCount(12);
+  await expect(page.locator('.source-card')).toHaveCount(13);
   await page.getByRole('button', { name: 'Суды и долги', exact: true }).click();
   await expect(page.locator('.source-card')).toHaveCount(3);
   await page.getByRole('button', { name: 'История поиска', exact: true }).click();
@@ -100,6 +100,7 @@ test('карточки ФНС без ключа, фильтр ИП, сведен
       resizeSource: async () => {}, closeSource: async () => {}, cancelCollection: async () => {},
       captureSource: async () => { throw new Error('No active source'); },
       collectSources: async () => [{ sourceId: 'accounting', status: 'ready', title: 'Отчётность', message: 'Сведения получены', text: 'Выручка за год: 1 000 000', tables: [['Показатель', 'Значение'], ['Выручка', '1000000']].map(row => [row]), url: 'https://bo.nalog.gov.ru/', fetchedAt: new Date().toISOString() }],
+      collectContacts: async () => [],
       getExtract: async () => ({ base64: '', fileName: 'test.pdf' }), exportExtract: async () => true,
       onSourceState: () => () => {}, onResearchResult: () => () => {}, onRegistryResults: () => () => {},
     };

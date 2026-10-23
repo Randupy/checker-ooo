@@ -28,6 +28,7 @@ export const SOURCES: Source[] = [
   { id: 'rnp', name: 'Недобросовестные поставщики', description: 'Сведения о включении компании в реестр недобросовестных поставщиков.', category: 'business', kind: 'official', label: 'ЕИС · РНП', domain: 'zakupki.gov.ru', url: q => searchUrl('https://zakupki.gov.ru/epz/dishonestsupplier/search/results.html', 'searchString', q), supportsQuery: true },
   { id: 'rusprofile', name: 'Руспрофайл', description: 'Сводная карточка компании, связи и дополнительные сведения агрегатора.', category: 'business', kind: 'commercial', label: 'Коммерческий сервис', domain: 'rusprofile.ru', url: q => searchUrl('https://www.rusprofile.ru/search', 'query', q), supportsQuery: true },
   { id: 'checko', name: 'Чекко', description: 'Реквизиты, финансовые показатели и проверка деловой репутации.', category: 'business', kind: 'commercial', label: 'Коммерческий сервис', domain: 'checko.ru', url: q => searchUrl('https://checko.ru/search', 'query', q), supportsQuery: true },
+  { id: 'listorg', name: 'Лист-Орг', description: 'Опубликованные деловые телефоны, электронная почта и сайты организаций.', category: 'business', kind: 'commercial', label: 'Открытый справочник организаций', domain: 'list-org.com', url: q => `https://www.list-org.com/search?type=${/^\d{10,12}$/.test(q) ? 'inn' : 'all'}&val=${encodeURIComponent(q)}`, supportsQuery: true },
 ];
 
 export const CATEGORY_LABELS: Record<Category, string> = {

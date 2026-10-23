@@ -3,6 +3,7 @@ on:
   push:
     paths:
       - scripts/diagnose-contacts.mjs
+      - scripts/check-contacts-live.mjs
       - .github/workflows/contacts.yml
   workflow_dispatch:
 permissions:
@@ -21,3 +22,4 @@ jobs:
       - run: npm run setup:desktop
       - run: npm run build
       - run: node scripts/diagnose-contacts.mjs
+      - run: node scripts/check-contacts-live.mjs
