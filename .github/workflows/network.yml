@@ -1,0 +1,26 @@
+name: Diagnose official registry connection
+on:
+  push:
+    paths:
+      - scripts/diagnose-network.mjs
+      - .github/workflows/network.yml
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  transport:
+    strategy:
+      matrix:
+        os: [windows-latest, ubuntu-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 7
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - run: npm run setup:desktop
+      - run: npm run build
+      - run: node scripts/diagnose-network.mjs
