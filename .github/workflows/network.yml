@@ -27,5 +27,5 @@ jobs:
       - run: npm run setup:desktop
       - run: npm run build
       - run: node scripts/diagnose-network.mjs
+        if: github.event_name == 'workflow_dispatch'
       - run: node scripts/check-live.mjs
-        if: runner.os == 'Windows'

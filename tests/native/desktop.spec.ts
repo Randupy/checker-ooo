@@ -15,7 +15,8 @@ test('поиск через настоящий HTTP-транспорт не жд
     requests.push({ method: request.method!, path: request.url!, body });
     if (request.method === 'GET' && request.url === '/') return; // Regression: landing page never responds.
     response.setHeader('Content-Type', 'application/json');
-    response.end(JSON.stringify(request.method === 'POST' ? { t: 'local_transport_token' } : { rows: [{ ...registryRow, cnt: 1 }] }));
+    const { i: _inn, ...withoutInn } = registryRow;
+    response.end(JSON.stringify(request.method === 'POST' ? { t: 'local_transport_token' } : { rows: [{ ...registryRow, cnt: 2 }, { ...withoutInn, o: '1027700132196' }] }));
   });
   await new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve));
   let app: ElectronApplication | undefined;
@@ -34,6 +35,8 @@ test('поиск через настоящий HTTP-транспорт не жд
     const result = await page.evaluate(() => window.dosye!.search('ооо "бетонстандарт"'));
     expect(result.issue).toBeUndefined();
     expect(result.companies[0].inn).toBe(registryRow.i);
+    expect(result.companies).toHaveLength(2);
+    expect(result.companies[1]).toMatchObject({ inn: '', ogrn: '1027700132196', source: 'egrul' });
     expect(requests.map(request => [request.method, request.path.split('?')[0]])).toEqual([
       ['POST', '/'], ['GET', '/search-result/local_transport_token'],
     ]);
