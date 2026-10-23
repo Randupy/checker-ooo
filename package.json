@@ -1,6 +1,6 @@
 {
   "name": "dosye-business",
-  "version": "1.0.1",
+  "version": "1.1.0-rc.1",
   "private": true,
   "type": "module",
   "description": "Досье — проверка компаний и предпринимателей России",
@@ -19,6 +19,7 @@
     "test": "vitest run",
     "test:e2e": "playwright test",
     "test:desktop": "playwright test --config playwright.electron.config.ts",
+    "test:live": "npm run build && node scripts/check-live.mjs",
     "dist:win": "npm run build && electron-builder --win nsis portable --x64 --publish never",
     "dist:portable": "npm run build && electron-builder --win portable --x64 --publish never",
     "dist:linux": "npm run build && electron-builder --linux dir --x64 --publish never"
@@ -28,7 +29,6 @@
     "lucide-react": "1.61.0",
     "react": "19.3.1",
     "react-dom": "19.3.1",
-    "undici": "8.12.3",
     "zod": "4.6.7"
   },
   "devDependencies": {

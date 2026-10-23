@@ -1,5 +1,20 @@
 import { z } from 'zod';
 
+export const sourceResultSchema = z.object({
+  sourceId: z.string().max(50),
+  status: z.enum(['ready', 'empty', 'captcha', 'needs_input', 'unavailable']),
+  title: z.string().max(500),
+  message: z.string().max(2000),
+  text: z.string().max(100000),
+  tables: z.array(z.array(z.array(z.string().max(2000))).max(100)).max(12),
+  url: z.string().max(3000),
+  fetchedAt: z.string().datetime(),
+  truncated: z.boolean().optional(),
+});
+export type SourceResult = z.infer<typeof sourceResultSchema>;
+export interface SourceBounds { x: number; y: number; width: number; height: number }
+export interface SourceViewState { sourceId: string; title: string; url: string; loading: boolean; error?: string }
+
 export const companySchema = z.object({
   id: z.string().min(1).max(120),
   name: z.string().max(2000),
@@ -17,9 +32,10 @@ export const companySchema = z.object({
   okved: z.string().max(100),
   capital: z.number().nullable(),
   branch: z.string().max(100),
-  source: z.enum(['dadata', 'demo']),
+  source: z.enum(['dadata', 'egrul', 'demo']),
   fetchedAt: z.string().datetime(),
   raw: z.record(z.string(), z.unknown()),
+  research: z.array(sourceResultSchema).max(20).optional(),
 });
 export type Company = z.infer<typeof companySchema>;
 export const historySchema = z.object({
@@ -42,17 +58,31 @@ export interface AppState extends SavedState {
 export interface SearchResponse {
   companies: Company[];
   query: string;
-  mode: 'api' | 'sources';
+  mode: 'free' | 'api' | 'sources';
+  page?: number;
+  total?: number;
+  hasMore?: boolean;
+  issue?: { kind: 'captcha' | 'unavailable'; message: string };
 }
 export interface Bridge {
   getState(): Promise<AppState>;
-  search(query: string): Promise<SearchResponse>;
+  search(query: string, page?: number): Promise<SearchResponse>;
   saveApiKey(key: string): Promise<void>;
   removeApiKey(): Promise<void>;
   toggleFavorite(company: Company): Promise<SavedState>;
   remember(company: Company): Promise<SavedState>;
   clearHistory(): Promise<SavedState>;
-  openSource(id: string, query: string): Promise<void>;
+  openSource(id: string, query: string, bounds?: SourceBounds): Promise<void>;
+  resizeSource(bounds: SourceBounds): Promise<void>;
+  closeSource(): Promise<void>;
+  captureSource(): Promise<SourceResult>;
+  collectSources(company: Company): Promise<SourceResult[]>;
+  cancelCollection(): Promise<void>;
+  getExtract(company: Company): Promise<{ base64: string; fileName: string }>;
+  exportExtract(company: Company): Promise<boolean>;
+  onSourceState(listener: (state: SourceViewState) => void): () => void;
+  onResearchResult(listener: (result: SourceResult, companyId: string) => void): () => void;
+  onRegistryResults(listener: (result: SearchResponse) => void): () => void;
   exportCompany(company: Company, format: 'json' | 'csv'): Promise<boolean>;
 }
 export const EMPTY_STATE: SavedState = { favorites: [], history: [], recent: [] };

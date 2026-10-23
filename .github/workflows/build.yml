@@ -89,6 +89,10 @@ jobs:
           if gh release view "$RELEASE_TAG" > /dev/null 2>&1; then
             gh release upload "$RELEASE_TAG" release/*.exe release/SHA256SUMS.txt --clobber
           else
+            release_options=()
+            if [[ "$RELEASE_TAG" == *-* ]]; then
+              release_options+=(--prerelease)
+            fi
             gh release create "$RELEASE_TAG" release/*.exe release/SHA256SUMS.txt \
-              --verify-tag --title "Досье $RELEASE_TAG" --notes-file .github/release-notes.md
+              --verify-tag --title "Досье $RELEASE_TAG" --notes-file .github/release-notes.md "${release_options[@]}"
           fi

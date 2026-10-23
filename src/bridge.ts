@@ -1,6 +1,5 @@
 import { EMPTY_STATE, stateSchema, type Bridge, type Company, type SavedState } from './shared/model';
 import { parseQuery } from './shared/search';
-import { getSourceUrl } from './shared/sources';
 import { exportContent } from './shared/export';
 
 declare global { interface Window { dosye?: Bridge } }
@@ -23,9 +22,9 @@ const preview: Bridge = {
     const state = read();
     state.history = [{ query, at: new Date().toISOString(), count: 0 }, ...state.history.filter(item => item.query !== query)].slice(0, 50);
     write(state);
-    return { companies: [], query, mode: 'sources' };
+    return { companies: [], query, mode: 'free', issue: { kind: 'unavailable', message: 'Это веб-предпросмотр. Прямой поиск ФНС и сбор сведений работают в настольном приложении Windows без API-ключа.' } };
   },
-  async saveApiKey() { throw new Error('Подключение API доступно в приложении Windows.'); },
+  async saveApiKey() { throw new Error('Для поиска ФНС ключи не требуются.'); },
   async removeApiKey() {},
   async toggleFavorite(company: Company) {
     const state = read();
@@ -42,10 +41,13 @@ const preview: Bridge = {
     return write(state);
   },
   async clearHistory() { const state = read(); return write({ ...state, history: [], recent: [] }); },
-  async openSource(id, query) {
-    const opened = window.open(getSourceUrl(id, query), '_blank', 'noopener,noreferrer');
-    if (opened) opened.opener = null;
-  },
+  async openSource() { throw new Error('Встроенные окна источников доступны в приложении Windows. Внешний браузер не открывается.'); },
+  async resizeSource() {}, async closeSource() {}, async cancelCollection() {},
+  async captureSource() { throw new Error('Откройте настольное приложение для получения сведений.'); },
+  async collectSources() { throw new Error('Сбор сведений доступен в настольном приложении.'); },
+  async getExtract() { throw new Error('Загрузка выписки доступна в настольном приложении без API-ключей.'); },
+  async exportExtract() { throw new Error('Загрузка выписки доступна в настольном приложении.'); },
+  onSourceState: () => () => {}, onResearchResult: () => () => {}, onRegistryResults: () => () => {},
   async exportCompany(company, format) {
     const blob = new Blob([exportContent(company, format)], { type: format === 'json' ? 'application/json;charset=utf-8' : 'text/csv;charset=utf-8' });
     const url = URL.createObjectURL(blob);

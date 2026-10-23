@@ -23,5 +23,9 @@ export function exportContent(company: Company, format: 'json' | 'csv'): string 
     ['Дата регистрации', company.registeredAt ? new Date(company.registeredAt).toISOString() : ''],
     ['Источник', company.source], ['Дата получения', company.fetchedAt],
   ];
+  for (const result of company.research ?? []) {
+    fields.push([`Источник ${result.sourceId}: состояние`, result.status], [`Источник ${result.sourceId}: время`, result.fetchedAt], [`Источник ${result.sourceId}: сведения`, result.text]);
+    for (const [index, table] of result.tables.entries()) for (const row of table) fields.push([`${result.sourceId}: таблица ${index + 1}`, row.join(' | ')]);
+  }
   return '\uFEFF' + [['Поле', 'Значение'], ...fields].map(row => row.map(csvCell).join(';')).join('\r\n');
 }

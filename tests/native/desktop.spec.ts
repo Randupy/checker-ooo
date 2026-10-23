@@ -2,54 +2,119 @@ import { test, expect, _electron, type ElectronApplication } from '@playwright/t
 import { mkdtemp, rm, readFile } from 'node:fs/promises';
 import path from 'node:path';
 import os from 'node:os';
+import { registryRow, minimalPdf } from '../fixtures/registry';
 
-test('настольное приложение: изолированный renderer, IPC, диск, перезапуск, экспорт', async () => {
+test('бесплатный поиск, встроенный источник, выписка PDF, экспорт и перезапуск Electron', async () => {
   const temporary = await mkdtemp(path.join(os.tmpdir(), 'dosye-native-'));
   let app: ElectronApplication | undefined;
-  const launch = () => _electron.launch({
-    args: [
-      ...(process.platform === 'linux' ? ['--no-sandbox', '--headless', '--ozone-platform=headless'] : []),
-      `--user-data-dir=${temporary}`,
-      path.resolve('dist-electron/main.cjs'),
-    ],
-    env: { ...process.env, XDG_CONFIG_HOME: temporary },
-  });
+  const launch = () => _electron.launch({ args: [
+    ...(process.platform === 'linux' ? ['--no-sandbox', '--headless', '--ozone-platform=headless'] : []),
+    `--user-data-dir=${temporary}`, path.resolve('dist-electron/main.cjs'),
+  ], env: { ...process.env, XDG_CONFIG_HOME: temporary } });
   try {
     app = await launch();
     let page = await app.firstWindow();
+    // Protocol fixtures test the full desktop stack without claiming live-source verification.
+    await app.evaluate(({ session }, fixture) => {
+      const sourceSession = session.fromPartition('persist:dosye-official');
+      sourceSession.protocol.handle('https', async request => {
+        const url = new URL(request.url);
+        if (url.hostname === 'egrul.nalog.ru' && request.method === 'POST') return Response.json({ t: 'search_fixture_token_001' });
+        if (url.pathname.startsWith('/search-result/')) return Response.json({ rows: [{ ...fixture.row, cnt: '1' }] });
+        if (url.pathname.startsWith('/vyp-request/')) return Response.json({ t: 'extract_fixture_token_001' });
+        if (url.pathname.startsWith('/vyp-status/')) return Response.json({ status: 'ready' });
+        if (url.pathname.startsWith('/vyp-download/')) return new Response(fixture.pdf, { headers: { 'Content-Type': 'application/pdf' } });
+        return new Response('<!doctype html><html lang="ru"><head><title>Источник: протокольная фикстура</title></head><body><main id="results"><h1>Организация 7707083893</h1><table><tr><th>Показатель</th><th>Значение</th></tr><tr><td>ИНН</td><td>7707083893</td></tr><tr><td>Выручка</td><td>1000000</td></tr></table></main></body></html>', { headers: { 'Content-Type': 'text/html;charset=utf-8' } });
+      });
+    }, { row: registryRow, pdf: minimalPdf() });
     await expect(page.getByRole('heading', { name: 'Знайте, с кем работаете.' })).toBeVisible();
     expect(await page.evaluate(() => typeof (window as unknown as { require: unknown }).require)).toBe('undefined');
-    expect(await page.evaluate(async () => (await window.dosye!.getState()).desktop)).toBe(true);
-    await expect(page.evaluate(() => window.dosye!.openSource('invalid', 'query'))).rejects.toThrow('Неизвестный источник');
+    expect(await page.evaluate(async () => (await window.dosye!.getState()).hasApiKey)).toBe(false);
+    await expect(page.evaluate(() => window.dosye!.openSource('invalid', 'query', { x: 250, y: 250, width: 600, height: 400 }))).rejects.toThrow('Неизвестный источник');
     await page.getByRole('textbox', { name: 'Название компании, ИНН или ОГРН' }).fill('7707083893');
     await page.getByRole('button', { name: 'Найти', exact: true }).click();
-    await expect(page.getByText('Автоматический поиск пока не подключён')).toBeVisible();
-    await page.getByRole('button', { name: 'Поиск компаний', exact: true }).click();
-    await page.getByRole('button', { name: 'Посмотреть пример' }).click();
+    await expect(page.locator('.company-list')).toContainText('ООО Тест ФНС');
+    await page.locator('.company-open').click();
+    await expect(page.getByRole('heading', { name: 'ООО Тест ФНС', level: 1 })).toBeVisible();
+    await page.getByRole('button', { name: 'Остановить', exact: true }).click();
+    await expect(page.getByRole('button', { name: 'Остановить', exact: true })).not.toBeVisible();
     await page.getByRole('button', { name: 'Сохранить', exact: true }).click();
     await expect(page.getByRole('button', { name: 'В избранном', exact: true })).toBeVisible();
-    const exportPath = path.join(temporary, 'company.json');
-    await app.evaluate(({ dialog }, exportPath) => {
-      dialog.showSaveDialog = async () => ({ canceled: false, filePath: exportPath });
-    }, exportPath);
+    const accounting = page.locator('.research-item').filter({ hasText: 'Бухгалтерская отчётность' });
+    await accounting.getByRole('button', { name: 'Открыть здесь' }).click();
+    await expect(page.locator('.source-workspace')).toBeVisible();
+    await expect(page.locator('.source-workspace .spin')).toHaveCount(0);
+    const isolated = await app.evaluate(async ({ webContents }) => Promise.all(webContents.getAllWebContents().filter(contents => contents.getURL().startsWith('https://bo.nalog.gov.ru')).map(async contents => ({ require: await contents.executeJavaScript('typeof window.require'), bridge: await contents.executeJavaScript('typeof window.dosye') }))));
+    expect(isolated).toEqual([{ require: 'undefined', bridge: 'undefined' }]);
+    await page.getByRole('button', { name: 'Сохранить сведения', exact: true }).click();
+    await expect(page.locator('.source-workspace')).not.toBeVisible();
+    await expect(accounting).toContainText('Сведения получены');
+    await accounting.getByRole('button', { name: 'Показать полученные сведения' }).click();
+    await expect(accounting.locator('table')).toContainText('1000000');
+    await page.getByRole('tab', { name: 'Выписка ФНС', exact: true }).click();
+    await page.getByRole('button', { name: 'Загрузить выписку бесплатно' }).click();
+    await expect(page.getByTitle('Выписка ФНС в приложении')).toBeVisible();
+    await app.evaluate(({ dialog }, directory) => {
+      dialog.showSaveDialog = async (...args: unknown[]) => {
+        const options = args.at(-1) as { defaultPath?: string };
+        return { canceled: false, filePath: directory + '/' + (options.defaultPath?.endsWith('.pdf') ? 'extract.pdf' : 'company.json') };
+      };
+    }, temporary);
+    await page.getByRole('button', { name: 'Сохранить PDF', exact: true }).click();
+    await expect.poll(async () => (await readFile(path.join(temporary, 'extract.pdf')).catch(() => Buffer.from(''))).subarray(0, 5).toString()).toBe('%PDF-');
+    await page.getByRole('tab', { name: 'Обзор', exact: true }).click();
     await page.getByRole('button', { name: 'Полные данные JSON' }).click();
     await expect(page.getByRole('status')).toContainText('Карточка экспортирована');
-    expect(JSON.parse(await readFile(exportPath, 'utf8')).company.source).toBe('demo');
-    await page.evaluate(() => window.scrollTo(0, 0));
-    await page.screenshot({ path: 'test-results/desktop-dossier.png', fullPage: true });
+    const exported = JSON.parse(await readFile(path.join(temporary, 'company.json'), 'utf8'));
+    expect(exported.company.source).toBe('egrul');
+    expect(exported.company.research.some((item: { sourceId: string; status: string }) => item.sourceId === 'accounting' && item.status === 'ready')).toBe(true);
     await app.close();
-    app = await launch();
-    page = await app.firstWindow();
+    app = await launch(); page = await app.firstWindow();
     await page.getByRole('button', { name: 'Избранное', exact: false }).first().click();
-    await expect(page.locator('.company-list')).toContainText('Северная мастерская');
+    await expect(page.locator('.company-list')).toContainText('ООО Тест ФНС');
+    await page.locator('.company-open').click();
+    await expect(page.locator('.research-item').filter({ hasText: 'Бухгалтерская отчётность' })).toContainText('Сведения получены');
     await page.getByRole('button', { name: 'История поиска', exact: true }).click();
     await expect(page.locator('.history-list')).toContainText('7707083893');
-    const { secureStorage } = await page.evaluate(() => window.dosye!.getState());
-    if (!secureStorage) {
-      await expect(page.evaluate(() => window.dosye!.saveApiKey('a'.repeat(40)))).rejects.toThrow('хранилище ОС недоступно');
-    }
   } finally {
     if (app) await app.close();
-    await rm(temporary, { recursive: true, force: true });
+    await rm(temporary, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
+  }
+});
+
+test('подтверждение источника внутри приложения возвращает записи в общий список', async () => {
+  const temporary = await mkdtemp(path.join(os.tmpdir(), 'dosye-captcha-'));
+  let app: ElectronApplication | undefined;
+  try {
+    app = await _electron.launch({ args: [...(process.platform === 'linux' ? ['--no-sandbox', '--headless', '--ozone-platform=headless'] : []), `--user-data-dir=${temporary}`, path.resolve('dist-electron/main.cjs')], env: { ...process.env, XDG_CONFIG_HOME: temporary } });
+    const page = await app.firstWindow();
+    await app.evaluate(({ session }, row) => {
+      let verified = false;
+      session.fromPartition('persist:dosye-official').protocol.handle('https', async request => {
+        const url = new URL(request.url);
+        if (url.pathname === '/confirm-fixture') { verified = true; return Response.json({ ok: true }); }
+        if (request.method === 'POST') return Response.json(verified ? { t: 'search_confirmed_fixture' } : { captchaRequired: true });
+        if (url.pathname.startsWith('/search-result/')) return Response.json({ rows: [{ ...row, cnt: 1 }] });
+        return new Response(`<html lang="ru"><body><form><input name="query" placeholder="ИНН или название"><button>Найти</button></form><div id="captcha">Ручное подтверждение в тестовой фикстуре<button id="confirm">Подтвердить</button></div><script>document.querySelector('form').onsubmit=async e=>{e.preventDefault();const started=await fetch('/',{method:'POST',body:new URLSearchParams({query:document.querySelector('input').value})}).then(r=>r.json());if(started.t)await fetch('/search-result/'+started.t).then(r=>r.json());};document.querySelector('#confirm').onclick=async()=>{await fetch('/confirm-fixture',{method:'POST'});document.querySelector('form').requestSubmit();};</script></body></html>`, { headers: { 'Content-Type': 'text/html;charset=utf-8' } });
+      });
+    }, registryRow);
+    await page.getByRole('textbox', { name: 'Название компании, ИНН или ОГРН' }).fill('Проверка');
+    await page.getByRole('button', { name: 'Найти', exact: true }).click();
+    await expect(page.getByText('ФНС требует подтверждение запроса', { exact: true })).toBeVisible();
+    await page.getByRole('button', { name: 'Открыть ФНС в приложении', exact: true }).click();
+    await expect.poll(() => app!.evaluate(async ({ webContents }) => {
+      const source = webContents.getAllWebContents().find(contents => contents.getURL().startsWith('https://egrul.nalog.ru/'));
+      return source ? source.executeJavaScript("document.querySelector('input')?.value") : '';
+    })).toBe('Проверка');
+    // Simulate the user's click in the fixture, not an automatic CAPTCHA solver.
+    await app.evaluate(async ({ webContents }) => {
+      const source = webContents.getAllWebContents().find(contents => contents.getURL().startsWith('https://egrul.nalog.ru/'))!;
+      await source.executeJavaScript("document.querySelector('#confirm').click()");
+    });
+    await expect(page.locator('.company-list')).toContainText('ООО Тест ФНС');
+    await expect(page.locator('.source-workspace')).not.toBeVisible();
+  } finally {
+    if (app) await app.close();
+    await rm(temporary, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
   }
 });

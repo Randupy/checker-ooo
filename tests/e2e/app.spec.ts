@@ -12,7 +12,8 @@ test('главный экран, проверка номера, поиск бе�
   await expect(page.getByRole('alert')).toContainText('Контрольная цифра');
   await input.fill('7707083893');
   await input.press('Enter');
-  await expect(page.getByText('Автоматический поиск пока не подключён')).toBeVisible();
+  await expect(page.getByText('Это веб-предпросмотр.', { exact: false })).toBeVisible();
+  await page.getByRole('button', { name: 'Источники данных', exact: true }).click();
   await expect(page.locator('.source-card')).toHaveCount(12);
   await page.getByRole('button', { name: 'Суды и долги', exact: true }).click();
   await expect(page.locator('.source-card')).toHaveCount(3);
@@ -53,7 +54,8 @@ test('настройки предпросмотра, помощь с клави�
   await page.goto('/');
   await page.getByRole('button', { name: 'Настройки', exact: true }).click();
   await expect(page.getByText('Вы открыли веб-предпросмотр')).toBeVisible();
-  await expect(page.getByLabel('API-ключ DaData')).toBeDisabled();
+  await expect(page.locator('input[type=password]')).toHaveCount(0);
+  await expect(page.getByText('Без платного API', { exact: true })).toBeVisible();
   await page.getByRole('button', { name: 'Помощь', exact: true }).click();
   await expect(page.getByRole('dialog')).toBeVisible();
   await page.keyboard.press('Escape');
@@ -67,33 +69,39 @@ test('настройки предпросмотра, помощь с клави�
   await page.screenshot({ path: 'test-results/home-mobile.png', fullPage: true });
 });
 
-test('источники открываются только по выбранному сервису с кодированным запросом', async ({ page, context }) => {
+test('источник открывается в панели приложения и не создаёт внешнюю вкладку', async ({ page, context }) => {
   await page.goto('/');
   await page.getByRole('button', { name: 'Источники данных', exact: true }).click();
   await page.getByRole('textbox', { name: 'Запрос для источников' }).fill('ООО Север & Запад');
-  await context.route('https://zakupki.gov.ru/**', route => route.fulfill({ body: 'External source test' }));
-  const popupPromise = context.waitForEvent('page');
   await page.getByRole('button', { name: 'Открыть: Государственные закупки', exact: true }).click();
-  const popup = await popupPromise;
-  await popup.waitForLoadState();
-  expect(new URL(popup.url()).searchParams.get('searchString')).toBe('ООО Север & Запад');
+  await expect(page.locator('.source-workspace')).toBeVisible();
+  await expect(page.locator('.source-workspace')).toContainText('Запрос: ООО Север & Запад');
+  await expect(page.getByRole('alert')).toContainText('Встроенные окна источников доступны в приложении Windows');
+  expect(context.pages()).toHaveLength(1);
+  await page.getByRole('button', { name: 'Закрыть источник' }).click();
+  await expect(page.locator('.source-workspace')).not.toBeVisible();
 });
 
-test('карточки из API, фильтр ИП, неизвестный статус и ошибка поставщика', async ({ page }) => {
+test('карточки ФНС без ключа, фильтр ИП, сведения источников и ошибка соединения', async ({ page }) => {
   await page.addInitScript(({ demo }) => {
     window.dosye = {
-      getState: async () => ({ favorites: [], history: [], recent: [], hasApiKey: true, secureStorage: true, desktop: true }),
+      getState: async () => ({ favorites: [], history: [], recent: [], hasApiKey: false, secureStorage: false, desktop: true }),
       search: async query => {
-        if (query === 'Ошибка') throw new Error('Лимит запросов DaData исчерпан.');
-        return { query, mode: 'api', companies: [
-          { ...demo, id: 'legal', name: 'ООО Тестовая организация', source: 'dadata', inn: '7707083893', status: 'UNKNOWN', raw: { inn: '7707083893', state: {} } },
-          { ...demo, id: 'individual', name: 'ИП Тестовый предприниматель', type: 'INDIVIDUAL', source: 'dadata', inn: '500100732259', status: 'ACTIVE', raw: { inn: '500100732259' } },
+        if (query === 'Ошибка') throw new Error('Нет соединения с ФНС.');
+        return { query, mode: 'free', companies: [
+          { ...demo, id: 'legal', name: 'ООО Тестовая организация', source: 'egrul', inn: '7707083893', status: 'UNKNOWN', raw: { inn: '7707083893', state: {} } },
+          { ...demo, id: 'individual', name: 'ИП Тестовый предприниматель', type: 'INDIVIDUAL', source: 'egrul', inn: '500100732259', status: 'ACTIVE', raw: { inn: '500100732259' } },
         ] };
       },
       remember: async () => ({ favorites: [], history: [], recent: [] }),
       toggleFavorite: async () => ({ favorites: [], history: [], recent: [] }),
       clearHistory: async () => ({ favorites: [], history: [], recent: [] }),
       saveApiKey: async () => {}, removeApiKey: async () => {}, openSource: async () => {}, exportCompany: async () => true,
+      resizeSource: async () => {}, closeSource: async () => {}, cancelCollection: async () => {},
+      captureSource: async () => { throw new Error('No active source'); },
+      collectSources: async () => [{ sourceId: 'accounting', status: 'ready', title: 'Отчётность', message: 'Сведения получены', text: 'Выручка за год: 1 000 000', tables: [['Показатель', 'Значение'], ['Выручка', '1000000']].map(row => [row]), url: 'https://bo.nalog.gov.ru/', fetchedAt: new Date().toISOString() }],
+      getExtract: async () => ({ base64: '', fileName: 'test.pdf' }), exportExtract: async () => true,
+      onSourceState: () => () => {}, onResearchResult: () => () => {}, onRegistryResults: () => () => {},
     };
   }, { demo: DEMO });
   await page.goto('/');
@@ -106,11 +114,11 @@ test('карточки из API, фильтр ИП, неизвестный ст�
   await expect(page.locator('.company-row')).toHaveCount(1);
   await page.locator('.company-open').click();
   await expect(page.getByRole('heading', { name: 'ИП Тестовый предприниматель', level: 1 })).toBeVisible();
-  await page.getByRole('tab', { name: 'Все данные API' }).click();
+  await page.getByRole('tab', { name: 'Данные источника' }).click();
   await expect(page.locator('pre')).toContainText('500100732259');
   await page.getByRole('button', { name: 'Поиск компаний', exact: true }).click();
   await input.fill('Ошибка');
   await input.press('Enter');
-  await expect(page.getByRole('alert')).toContainText('Лимит запросов');
+  await expect(page.getByRole('alert')).toContainText('Нет соединения с ФНС');
   await expect(page.locator('.company-row')).toHaveCount(0);
 });

@@ -6,7 +6,6 @@ import { validInn, validOgrn, parseQuery } from '../src/shared/search';
 import { exportContent } from '../src/shared/export';
 import { SOURCES, getSourceUrl } from '../src/shared/sources';
 import { DEMO } from '../src/shared/demo';
-import { searchDadata, normalizeSuggestion } from '../electron/provider';
 import { Store } from '../electron/storage';
 
 describe('идентификаторы организаций и ИП', () => {
@@ -29,55 +28,6 @@ describe('идентификаторы организаций и ИП', () => {
     expect(() => parseQuery('7707083894')).toThrow('Проверьте номер');
     expect(() => parseQuery('a')).toThrow();
     expect(() => parseQuery('a'.repeat(251))).toThrow();
-  });
-});
-
-const providerData = {
-  inn: '7707083893', ogrn: '1027700132195', kpp: '773601001', type: 'LEGAL',
-  name: { short_with_opf: 'ПАО СБЕРБАНК', full_with_opf: 'ПУБЛИЧНОЕ АКЦИОНЕРНОЕ ОБЩЕСТВО СБЕРБАНК' },
-  state: { status: 'ACTIVE', registration_date: 677376000000 },
-  address: { value: 'Москва', unrestricted_value: 'г Москва, ул Вавилова, д 19' },
-  management: { name: 'ФИО руководителя', post: 'Президент' },
-  capital: { value: 67760844000 }, okved: '64.19', branch_type: 'MAIN',
-};
-
-describe('интеграция DaData', () => {
-  it('выбирает поиск по ИНН, сохраняет все исходные поля и не теряет статус', async () => {
-    const fetcher = vi.fn<typeof fetch>().mockResolvedValue(new Response(JSON.stringify({ suggestions: [{ value: 'СБЕРБАНК', data: providerData }] })));
-    const result = await searchDadata('7707083893', 'test-api-token', fetcher);
-    const [url, options] = fetcher.mock.calls[0];
-    expect(url).toContain('/findById/party');
-    expect(options?.headers).toMatchObject({ Authorization: 'Token test-api-token' });
-    expect(JSON.parse(options!.body as string)).toEqual({ query: '7707083893', count: 20 });
-    expect(result).toHaveLength(1);
-    expect(result[0]).toMatchObject({ name: 'ПАО СБЕРБАНК', inn: '7707083893', status: 'ACTIVE', source: 'dadata', raw: providerData });
-  });
-  it('ищет по названию через suggest, корректно обрабатывает ИП и отсутствие дополнительных сведений', async () => {
-    const fetcher = vi.fn<typeof fetch>().mockResolvedValue(new Response(JSON.stringify({ suggestions: [{ value: 'ИП Пример', data: { inn: '500100732259', type: 'INDIVIDUAL', state: { status: 'LIQUIDATED' } } }] })));
-    const result = await searchDadata('Пример', 'test', fetcher);
-    expect(fetcher.mock.calls[0][0]).toContain('/suggest/party');
-    expect(result[0]).toMatchObject({ type: 'INDIVIDUAL', capital: null, manager: '', address: '', registeredAt: null, status: 'LIQUIDATED' });
-  });
-  it('не подменяет отсутствие ответа демонстрационными данными', async () => {
-    const fetcher = vi.fn<typeof fetch>().mockResolvedValue(new Response('{"suggestions":[]}'));
-    expect(await searchDadata('Нет компании', 'test', fetcher)).toEqual([]);
-  });
-  it.each([[403, 'отклонила'], [429, 'Лимит'], [503, 'HTTP 503']])('объясняет ошибку HTTP %i', async (status, text) => {
-    const fetcher = vi.fn<typeof fetch>().mockResolvedValue(new Response('', { status }));
-    await expect(searchDadata('Север', 'test', fetcher)).rejects.toThrow(text);
-  });
-  it('отказывает при повреждённом ответе, сетевой ошибке и невалидном номере', async () => {
-    const fetcher = vi.fn<typeof fetch>().mockResolvedValue(new Response('{"unknown":[]}'));
-    await expect(searchDadata('Север', 'test', fetcher)).rejects.toThrow('распознать');
-    fetcher.mockRejectedValue(new Error('network error'));
-    await expect(searchDadata('Север', 'test', fetcher)).rejects.toThrow('связаться');
-    fetcher.mockClear();
-    await expect(searchDadata('7707083894', 'test', fetcher)).rejects.toThrow('Проверьте номер');
-    expect(fetcher).not.toHaveBeenCalled();
-  });
-  it('не превращает отсутствующий статус в действующую организацию', () => {
-    const company = normalizeSuggestion('Компания', { inn: '7707083893' }, new Date().toISOString());
-    expect(company.status).toBe('UNKNOWN');
   });
 });
 

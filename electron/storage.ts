@@ -41,7 +41,10 @@ export class Store {
     });
   }
   remember(company: Company): Promise<SavedState> {
-    return this.mutate(draft => { draft.recent = [company, ...draft.recent.filter(item => item.id !== company.id)].slice(0, 50); });
+    return this.mutate(draft => {
+      draft.recent = [company, ...draft.recent.filter(item => item.id !== company.id)].slice(0, 50);
+      draft.favorites = draft.favorites.map(item => item.id === company.id ? company : item);
+    });
   }
   recordSearch(query: string, count: number): Promise<SavedState> {
     return this.mutate(draft => {
