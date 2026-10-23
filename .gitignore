@@ -1,0 +1,9 @@
+node_modules/
+dist/
+dist-electron/
+release/
+playwright-report/
+test-results/
+.env*
+*.log
+.DS_Store
