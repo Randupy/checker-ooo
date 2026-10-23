@@ -98,7 +98,10 @@ export class FreeRegistry {
   }
   acceptRows(value: unknown, query: string, page = 1): SearchResponse {
     const parsed = rowsSchema.safeParse(value);
-    if (!parsed.success) throw new RegistryError('unavailable', 'Не удалось распознать найденные записи ФНС.');
+    if (!parsed.success) {
+      const fields = parsed.error.issues.slice(0, 5).map(issue => issue.path.join('.')).join(', ');
+      throw new RegistryError('unavailable', `Не удалось распознать найденные записи ФНС (поля: ${fields}).`);
+    }
     const rows = parsed.data.rows;
     for (const row of rows) {
       if (row.t && /^[A-Za-z0-9_-]{8,2000}$/.test(row.t)) this.documents.set(row.o || row.i, { token: row.t, at: Date.now() });

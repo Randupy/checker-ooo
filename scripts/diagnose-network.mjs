@@ -35,8 +35,22 @@ try {
         } catch (error) { requests.push({ origin, method, error: error.message, ms: Date.now() - started }); }
       }
     }
+    let rowShapes;
+    try {
+      const started = await transport.fetch('https://egrul.nalog.ru/', { method: 'POST', body: new URLSearchParams({ query: 'ооо "бетонстандарт"', region: '', vyp3CaptchaToken: '', PreventChromeAutocomplete: '' }).toString(), headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, signal: AbortSignal.timeout(18000) }).then(r => r.json());
+      if (typeof started.t === 'string') {
+        for (let attempt = 0; attempt < 12; attempt++) {
+          const result = await transport.fetch(`https://egrul.nalog.ru/search-result/${encodeURIComponent(started.t)}`, { signal: AbortSignal.timeout(18000) }).then(r => r.json());
+          if (Array.isArray(result.rows)) {
+            rowShapes = [...new Set(result.rows.map(row => JSON.stringify(Object.fromEntries(Object.entries(row).map(([key, value]) => [key, value === null ? 'null' : typeof value])))))];
+            break;
+          }
+          await new Promise(resolve => setTimeout(resolve, 750));
+        }
+      }
+    } catch (error) { rowShapes = { error: error.message }; }
     transport.setCertificateVerifyProc(null);
-    return { platform: process.platform, requests, certificates };
+    return { platform: process.platform, requests, certificates, rowShapes };
   });
   const message = JSON.stringify(results);
   console.log(message);

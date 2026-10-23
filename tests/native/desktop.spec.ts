@@ -2,7 +2,49 @@ import { test, expect, _electron, type ElectronApplication } from '@playwright/t
 import { mkdtemp, rm, readFile } from 'node:fs/promises';
 import path from 'node:path';
 import os from 'node:os';
+import { createServer } from 'node:http';
+import type { AddressInfo } from 'node:net';
 import { registryRow, minimalPdf } from '../fixtures/registry';
+
+test('поиск через настоящий HTTP-транспорт не ждёт зависшую главную страницу', async () => {
+  const temporary = await mkdtemp(path.join(os.tmpdir(), 'dosye-transport-'));
+  const requests: { method: string; path: string; body: string }[] = [];
+  const server = createServer(async (request, response) => {
+    let body = '';
+    for await (const chunk of request) body += chunk;
+    requests.push({ method: request.method!, path: request.url!, body });
+    if (request.method === 'GET' && request.url === '/') return; // Regression: landing page never responds.
+    response.setHeader('Content-Type', 'application/json');
+    response.end(JSON.stringify(request.method === 'POST' ? { t: 'local_transport_token' } : { rows: [{ ...registryRow, cnt: 1 }] }));
+  });
+  await new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve));
+  let app: ElectronApplication | undefined;
+  try {
+    app = await _electron.launch({ args: [...(process.platform === 'linux' ? ['--no-sandbox', '--headless', '--ozone-platform=headless'] : []), `--user-data-dir=${temporary}`, path.resolve('dist-electron/main.cjs')], env: { ...process.env, XDG_CONFIG_HOME: temporary } });
+    const page = await app.firstWindow();
+    await app.evaluate(async ({ session }, port) => {
+      const transport = session.fromPartition('persist:dosye-official');
+      await transport.setProxy({ mode: 'direct' });
+      // Only tests redirect the fixed official URLs to the loopback HTTP fixture.
+      transport.webRequest.onBeforeRequest({ urls: ['https://egrul.nalog.ru/*', 'https://egrul.nalog.gov.ru/*'] }, (details, callback) => {
+        const url = new URL(details.url);
+        callback({ redirectURL: `http://127.0.0.1:${port}${url.pathname}${url.search}` });
+      });
+    }, (server.address() as AddressInfo).port);
+    const result = await page.evaluate(() => window.dosye!.search('ооо "бетонстандарт"'));
+    expect(result.issue).toBeUndefined();
+    expect(result.companies[0].inn).toBe(registryRow.i);
+    expect(requests.map(request => [request.method, request.path.split('?')[0]])).toEqual([
+      ['POST', '/'], ['GET', '/search-result/local_transport_token'],
+    ]);
+    expect(new URLSearchParams(requests[0].body).get('query')).toBe('ооо "бетонстандарт"');
+  } finally {
+    if (app) await app.close();
+    server.closeAllConnections();
+    await new Promise<void>(resolve => server.close(() => resolve()));
+    await rm(temporary, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
+  }
+});
 
 test('бесплатный поиск, встроенный источник, выписка PDF, экспорт и перезапуск Electron', async () => {
   const temporary = await mkdtemp(path.join(os.tmpdir(), 'dosye-native-'));
