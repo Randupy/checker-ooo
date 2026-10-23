@@ -60,6 +60,10 @@ jobs:
             Write-Output "::error title=Windows packaging failed::$details"
           }
           exit $buildExitCode
+      - name: Verify contacts in the packaged Windows app
+        env:
+          DOSYE_TEST_EXECUTABLE: ${{ github.workspace }}/release/win-unpacked/Dosye.exe
+        run: npm run test:desktop -- contacts.spec.ts
       - uses: actions/upload-artifact@v4
         with:
           name: Dosye-Windows-x64

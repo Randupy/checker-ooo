@@ -7,7 +7,7 @@ import { minimalPdf, registryRow } from '../fixtures/registry';
 test('контакты из карточки и PDF: отображение, источник внутри приложения, CSV и сохранение после перезапуска', async () => {
   const directory = await mkdtemp(path.join(os.tmpdir(), 'dosye-contacts-'));
   let app: ElectronApplication | undefined;
-  const launch = () => _electron.launch({ args: [...(process.platform === 'linux' ? ['--no-sandbox', '--headless', '--ozone-platform=headless'] : []), `--user-data-dir=${directory}`, path.resolve('dist-electron/main.cjs')], env: { ...process.env, XDG_CONFIG_HOME: directory } });
+  const launch = () => _electron.launch({ executablePath: process.env.DOSYE_TEST_EXECUTABLE, args: [...(process.platform === 'linux' ? ['--no-sandbox', '--headless', '--ozone-platform=headless'] : []), `--user-data-dir=${directory}`, ...(process.env.DOSYE_TEST_EXECUTABLE ? [] : [path.resolve('dist-electron/main.cjs')])], env: { ...process.env, XDG_CONFIG_HOME: directory } });
   try {
     app = await launch();
     let page = await app.firstWindow();

@@ -25,7 +25,7 @@ export function exportContent(company: Company, format: 'json' | 'csv'): string 
   ];
   for (const result of company.research ?? []) {
     fields.push([`Источник ${result.sourceId}: состояние`, result.status], [`Источник ${result.sourceId}: время`, result.fetchedAt], [`Источник ${result.sourceId}: URL`, result.url], [`Источник ${result.sourceId}: сведения`, result.text]);
-    for (const contact of result.contacts ?? []) fields.push([`${result.sourceId}: ${contact.kind === 'email' ? 'Электронная почта' : contact.kind === 'phone' ? 'Телефон' : 'Сайт'}`, contact.value]);
+    for (const contact of result.contacts ?? []) fields.push([`${result.sourceId}: ${contact.kind === 'email' ? 'Электронная почта' : contact.kind === 'phone' ? 'Телефон' : contact.kind === 'fax' ? 'Факс' : 'Сайт'}`, contact.value]);
     for (const [index, table] of result.tables.entries()) for (const row of table) fields.push([`${result.sourceId}: таблица ${index + 1}`, row.join(' | ')]);
   }
   return '\uFEFF' + [['Поле', 'Значение'], ...fields].map(row => row.map(csvCell).join(';')).join('\r\n');

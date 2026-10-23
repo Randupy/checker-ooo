@@ -3,11 +3,18 @@ export function followCompanyRecord(options: { inn: string; ogrn: string; name?:
   const ids = [options.inn, options.ogrn].filter(Boolean);
   if (!ids.length || /\/(company|id|ip|entrepreneur)\//.test(location.pathname)) return false;
   const matches = (text: string) => ids.some(id => new RegExp(`(^|\\D)${id}(\\D|$)`).test(text));
-  const normalize = (value: string) => value.toLocaleLowerCase('ru').replace(/общество с ограниченной ответственностью|публичное акционерное общество|акционерное общество|индивидуальный предприниматель/g, ' ').replace(/[^\p{L}\p{N}]+/gu, ' ').split(' ').filter(word => word && !['ооо', 'ао', 'пао', 'оао', 'зао', 'ип'].includes(word)).join(' ');
+  const normalize = (value: string) => value.toLocaleLowerCase('ru').replace(/^(организация|компания|предприятие)\s+/u, '').replace(/общество с ограниченной ответственностью|публичное акционерное общество|акционерное общество|индивидуальный предприниматель/g, ' ').replace(/[^\p{L}\p{N}]+/gu, ' ').split(' ').filter(word => word && !['ооо', 'ао', 'пао', 'оао', 'зао', 'ип'].includes(word)).join(' ');
   const names = [options.name, options.fullName].filter(Boolean).map(value => normalize(value!));
   const current = new URL(location.href);
   const boundQuery = ['val', 'query'].some(parameter => ids.includes(current.searchParams.get(parameter) ?? '')) && matches(document.title + ' ' + document.body.innerText.slice(0, 5000));
   const links = Array.from(document.querySelectorAll<HTMLAnchorElement>('main a[href],article a[href],.search-result a[href],.company-item a[href],a[href]'));
+  if (boundQuery) {
+    const exact = links.slice(0, 1500).find(link => {
+      try { const url = new URL(link.href); return url.origin === location.origin && /^\/(company|id|ip|entrepreneur)\//.test(url.pathname) && !link.closest('footer,header,nav,aside') && Boolean(link.getClientRects().length) && names.includes(normalize(link.innerText)); }
+      catch { return false; }
+    });
+    if (exact) { exact.click(); return true; }
+  }
   for (const link of links.slice(0, 1500)) {
     let url: URL;
     try { url = new URL(link.href); } catch { continue; }
@@ -29,16 +36,16 @@ export function followCompanyRecord(options: { inn: string; ogrn: string; name?:
 }
 
 export function readBusinessContacts(company: { inn: string; ogrn: string; name: string; fullName: string }) {
-  const contacts: { kind: 'email' | 'phone' | 'website'; value: string }[] = [];
+  const contacts: { kind: 'email' | 'phone' | 'fax' | 'website'; value: string }[] = [];
   const ids = [company.inn, company.ogrn].filter(Boolean);
   const matchesId = (text: string) => ids.some(id => new RegExp(`(^|\\D)${id}(\\D|$)`).test(text));
-  const name = (value: string) => value.toLocaleLowerCase('ru').replace(/общество с ограниченной ответственностью|публичное акционерное общество|акционерное общество|индивидуальный предприниматель/g, ' ').replace(/[^\p{L}\p{N}]+/gu, ' ').split(' ').filter(word => word && !['ооо', 'ао', 'пао', 'оао', 'зао', 'ип'].includes(word)).join(' ');
+  const name = (value: string) => value.toLocaleLowerCase('ru').replace(/^(организация|компания|предприятие)\s+/u, '').replace(/общество с ограниченной ответственностью|публичное акционерное общество|акционерное общество|индивидуальный предприниматель/g, ' ').replace(/[^\p{L}\p{N}]+/gu, ' ').split(' ').filter(word => word && !['ооо', 'ао', 'пао', 'оао', 'зао', 'ип'].includes(word)).join(' ');
   const names = [name(company.name), name(company.fullName)].filter(Boolean);
   const title = name(document.querySelector('h1')?.textContent ?? '');
   const main = document.querySelector('main,[role=main],article') ?? document.body;
   const body = (main as HTMLElement)?.innerText ?? '';
   const recordPath = /^\/(company|id|ip|entrepreneur)\//.test(location.pathname);
-  const verified = recordPath && matchesId(body.slice(0, 25000)) && (Boolean(company.ogrn && location.pathname.includes(company.ogrn)) || names.includes(title));
+  const verified = recordPath && matchesId(body.slice(0, 25000)) && names.includes(title);
   if (!verified) return { verified: false, contacts };
   const excluded = (element: Element) => Boolean(element.closest('footer,header,nav,aside,[class*=advert],[class*=related],[class*=support],[class*=feedback]'));
   const visible = (element: Element) => Boolean(element.getClientRects().length) && getComputedStyle(element).visibility !== 'hidden';
@@ -47,7 +54,7 @@ export function readBusinessContacts(company: { inn: string; ogrn: string; name:
     if (excluded(label) || !visible(label)) continue;
     const text = (label.textContent ?? '').trim();
     if (!/^(телефон|факс|e-?mail|электронная почта|сайт|веб-сайт|web)(?:\s*[:：]|\s*$)/i.test(text) && !label.hasAttribute('itemprop')) continue;
-    const scope = label.closest('tr,dl') ?? label.parentElement;
+    const scope = label.matches('p') ? label : label.closest('tr,dl') ?? label.parentElement;
     if (scope && !excluded(scope) && (scope.textContent?.length ?? 0) < 4000) scopes.add(scope);
   }
   for (const element of Array.from(document.querySelectorAll('#contacts,#contact,[id*=contact],[class*=company-contact],[class*=contact-info],[itemprop=contactPoint]')).slice(0, 100)) {
@@ -62,7 +69,7 @@ export function readBusinessContacts(company: { inn: string; ogrn: string; name:
     }
   }
   const sourceHost = location.hostname.replace(/^www\./, '');
-  const add = (kind: 'email' | 'phone' | 'website', value: string) => {
+  const add = (kind: 'email' | 'phone' | 'fax' | 'website', value: string) => {
     if (contacts.length >= 100 || !value || value.length > 2000) return;
     const domain = value.split('@').at(-1)?.toLowerCase();
     if (kind === 'email' && (domain === sourceHost || domain?.endsWith(`.${sourceHost}`))) return;
@@ -79,7 +86,7 @@ export function readBusinessContacts(company: { inn: string; ogrn: string; name:
     for (const link of Array.from(scope.querySelectorAll<HTMLAnchorElement>('a[href]')).slice(0, 200)) {
       if (!visible(link) || excluded(link)) continue;
       if (/^mailto:/i.test(link.href)) add('email', link.href.replace(/^mailto:/i, '').split('?')[0]);
-      else if (/^tel:/i.test(link.href)) add('phone', link.href);
+      else if (/^tel:/i.test(link.href)) add(/^(факс|fax)\s*[:：]/i.test(link.closest('p,tr,dl')?.textContent?.trim() ?? '') ? 'fax' : 'phone', link.href);
       else if (/^https?:/i.test(link.href)) add('website', link.href);
     }
     const walker = document.createTreeWalker(scope, NodeFilter.SHOW_TEXT);
@@ -92,7 +99,7 @@ export function readBusinessContacts(company: { inn: string; ogrn: string; name:
     }
     const text = parts.join(' ');
     for (const email of text.match(/[A-Z0-9.!#$%&'*+\/=^_`{|}~-]+@[A-Z0-9.-]+\.[A-ZА-Я]{2,63}/gi) ?? []) add('email', email);
-    for (const phone of text.match(/\+\d[\d ()–−.-]{8,28}\d(?:\s*(?:доб\.?|ext\.?)\s*\d{1,8})?/gi) ?? []) add('phone', phone);
+    for (const match of text.matchAll(/\+\d[\d ()–−.-]{8,28}\d(?:\s*(?:доб\.?|ext\.?)\s*\d{1,8})?/gi)) add(/(?:факс|fax)\s*[:：]?\s*$/i.test(text.slice(Math.max(0, match.index! - 30), match.index)) ? 'fax' : 'phone', match[0]);
     for (const phone of text.match(/\b8\s*\(\d{3}\)\s*\d{3}[- ]?\d{2}[- ]?\d{2}/g) ?? []) add('phone', phone);
   }
   // Machine-readable business metadata is accepted only for this entity, never the publisher.
@@ -104,7 +111,8 @@ export function readBusinessContacts(company: { inn: string; ogrn: string; name:
     if (matching && /Organization|LocalBusiness|Corporation|Store/.test(String(entity['@type']))) {
       const scan = (object: Record<string, any>) => {
         for (const value of [object.email].flat()) if (typeof value === 'string') add('email', value);
-        for (const value of [object.telephone, object.faxNumber].flat()) if (typeof value === 'string') add('phone', value);
+        for (const value of [object.telephone].flat()) if (typeof value === 'string') add('phone', value);
+        for (const value of [object.faxNumber].flat()) if (typeof value === 'string') add('fax', value);
         for (const value of [object.url].flat()) if (typeof value === 'string') add('website', value);
       };
       scan(entity);

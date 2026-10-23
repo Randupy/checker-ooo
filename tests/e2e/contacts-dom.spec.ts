@@ -20,3 +20,20 @@ test('переходит именно в запись с совпавшим ИН
   expect(await page.evaluate(followCompanyRecord, company)).toBe(true);
   await expect(page).toHaveURL('https://checko.ru/company/target');
 });
+
+test('разметка Лист-Орг: заголовок с префиксом, телефон в относительной ссылке, факс отдельно', async ({ page }) => {
+  await page.route('https://www.list-org.com/**', route => route.fulfill({ contentType: 'text/html', body: '<h1>Организация ООО "Тест ФНС"</h1><p>ИНН: 7707083893</p><p><i>Телефон:</i><span><a href="/phone/495-7397000">+7 (495) 739-70-00</a></span></p><p><i>Факс:</i><span>+7 (495) 739-70-70</span></p><p><i>E-mail:</i><span>office@example.org</span></p><p><i>Сайт:</i><span><a href="https://business.example.org">business.example.org</a></span></p>' }));
+  await page.goto('https://www.list-org.com/company/54446');
+  const result = await page.evaluate(readBusinessContacts, company);
+  expect(result.verified).toBe(true);
+  expect(result.contacts).toContainEqual({ kind: 'phone', value: '+7 (495) 739-70-00' });
+  expect(result.contacts).toContainEqual({ kind: 'fax', value: '+7 (495) 739-70-70' });
+  expect(result.contacts).toContainEqual({ kind: 'email', value: 'office@example.org' });
+});
+
+test('при одинаковом ИНН в выдаче выбирает головную организацию по имени, а не первый филиал', async ({ page }) => {
+  await page.route('https://www.list-org.com/**', route => route.fulfill({ contentType: 'text/html', body: '<title>Список организаций с ИНН 7707083893</title><main><article><a href="/company/branch">Филиал ООО Тест ФНС</a><p>ИНН 7707083893</p></article><article><a href="/company/head">ООО Тест ФНС</a></article></main>' }));
+  await page.goto('https://www.list-org.com/search?type=inn&val=7707083893');
+  expect(await page.evaluate(followCompanyRecord, company)).toBe(true);
+  await expect(page).toHaveURL('https://www.list-org.com/company/head');
+});

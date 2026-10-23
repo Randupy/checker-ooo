@@ -1,7 +1,7 @@
 import { z } from 'zod';
 
 export const contactSchema = z.object({
-  kind: z.enum(['email', 'phone', 'website']),
+  kind: z.enum(['email', 'phone', 'fax', 'website']),
   value: z.string().min(1).max(2000),
 });
 export type Contact = z.infer<typeof contactSchema>;
