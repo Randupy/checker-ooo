@@ -1,0 +1,23 @@
+name: Check public business contacts
+on:
+  push:
+    paths:
+      - scripts/diagnose-contacts.mjs
+      - .github/workflows/contacts.yml
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  contacts:
+    runs-on: windows-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - run: npm run setup:desktop
+      - run: npm run build
+      - run: node scripts/diagnose-contacts.mjs
