@@ -49,6 +49,16 @@ test('контакты из карточки и PDF: отображение, и�
     await expect(panel).toContainText('https://business.example.org/');
     await expect(panel).not.toContainText('support@example.org');
     await expect(panel.getByRole('button', { name: 'Выписка ФНС', exact: true })).toBeVisible();
+    await app.evaluate(({ session }) => {
+      session.fromPartition('persist:dosye-official').protocol.handle('https', () => new Response('<main><h1>ООО Тест ФНС</h1><p>ИНН 7707083893</p><section id="contacts"><a href="tel:+74951234567">+7 (495) 123-45-67</a><a href="mailto:company@example.org">company@example.org</a><a href="https://business.example.org/">Сайт</a></section></main>', { headers: { 'Content-Type': 'text/html;charset=utf-8' } }));
+    });
+    await panel.getByRole('button', { name: 'Лист-Орг', exact: true }).first().click();
+    await expect(page.locator('.source-workspace')).toBeVisible();
+    await expect(page.locator('.source-workspace-address')).toContainText('https://www.list-org.com/company/1027700132195');
+    await expect(page.locator('.source-workspace .spin')).toHaveCount(0);
+    await page.getByRole('button', { name: 'Сохранить сведения', exact: true }).click();
+    await expect(page.locator('.source-workspace')).not.toBeVisible();
+    await expect(panel).toContainText('+74951234567');
     await page.screenshot({ path: testInfo.outputPath('contacts.png') });
     await app.evaluate(({ dialog }, directory) => { dialog.showSaveDialog = async () => ({ canceled: false, filePath: pathJoin(directory, 'contacts.csv') }); function pathJoin(dir: string, name: string) { return dir + '/' + name; } }, directory);
     await page.getByRole('button', { name: 'Таблица CSV' }).click();

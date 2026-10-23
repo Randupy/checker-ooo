@@ -39,6 +39,14 @@ async function bounded<T>(operation: Promise<T>, timeout = 18000): Promise<T> {
   try { return await Promise.race([operation, new Promise<T>((_, reject) => { timer = setTimeout(() => reject(new Error('Источник не ответил вовремя.')), timeout); })]); }
   finally { clearTimeout(timer); }
 }
+async function loadReadable(contents: WebContents, url: string) {
+  // Data is usable at DOM ready. Waiting for every advertising/analytics request
+  // can time out on an otherwise fully readable company card.
+  let listener: () => void = () => {};
+  const ready = new Promise<void>(resolve => { listener = resolve; contents.once('dom-ready', listener); });
+  try { await bounded(Promise.race([contents.loadURL(url), ready]), 20000); }
+  finally { contents.removeListener('dom-ready', listener); }
+}
 async function fill(contents: WebContents, id: string, query: string): Promise<boolean> {
   return contents.executeJavaScript(`(${fillSourceSearch.toString()})(${JSON.stringify({ id, query })})`);
 }
@@ -59,12 +67,12 @@ async function snapshot(contents: WebContents, sourceId: string, query: string, 
   const message = (messages[raw.status] ?? messages.needs_input) + (raw.truncated ? ' Снимок сокращён по размеру; полную выдачу и следующие страницы смотрите во встроенном окне.' : '');
   return sourceResultSchema.parse({ ...raw, sourceId, contacts, message, url: contents.getURL(), fetchedAt: new Date().toISOString() });
 }
-async function followBusiness(contents: WebContents, company: Company) {
-  const followed = await contents.executeJavaScript(`(${followCompanyRecord.toString()})(${JSON.stringify({ inn: company.inn, ogrn: company.ogrn, name: company.name, fullName: company.fullName })})`);
-  if (!followed) return;
-  await pause(1500);
-  const deadline = Date.now() + 8000;
-  while (!contents.isDestroyed() && contents.isLoadingMainFrame() && Date.now() < deadline) await pause(200);
+async function followBusiness(contents: WebContents, company: Company, sourceId: string) {
+  const url = await contents.executeJavaScript(`(${followCompanyRecord.toString()})(${JSON.stringify({ inn: company.inn, ogrn: company.ogrn, name: company.name, fullName: company.fullName, resolveOnly: true })})`);
+  if (typeof url !== 'string') return;
+  if (!permittedNavigation(sourceId, url)) throw new Error('Ссылка на карточку вне выбранного источника.');
+  await loadReadable(contents, url);
+  await pause(800);
 }
 export class SourceWorkspace {
   private view: WebContentsView | null = null;
@@ -115,11 +123,11 @@ export class SourceWorkspace {
     view.webContents.on('did-start-loading', () => this.send({ sourceId: id, title: 'Загрузка источника', url: view.webContents.getURL(), loading: true }));
     view.webContents.on('did-stop-loading', () => this.send({ sourceId: id, title: view.webContents.getTitle(), url: view.webContents.getURL(), loading: false }));
     try {
-      await bounded(view.webContents.loadURL(url));
+      await loadReadable(view.webContents, url);
       if (this.current !== current) return;
       await pause(500);
       if (!view.webContents.isDestroyed() && !reference?.url) current.submitted = await fill(view.webContents, id, query);
-      if (this.current === current && current.company && CONTACT_SOURCES.has(id)) await followBusiness(view.webContents, current.company);
+      if (this.current === current && current.company && CONTACT_SOURCES.has(id)) await followBusiness(view.webContents, current.company, id);
       if (id === 'accounting') {
         await pause(2500);
         if (this.current === current && !view.webContents.isDestroyed()) await view.webContents.executeJavaScript(`(${followAccountingRecord.toString()})(${JSON.stringify(query)})`);
@@ -190,8 +198,9 @@ export class SourceWorkspace {
           this.hidden.add(hidden);
           guard(hidden.webContents, source.id);
           let result: SourceResult;
+          let stage = 'загрузка страницы';
           try {
-            await bounded(hidden.loadURL(url), 15000);
+            await loadReadable(hidden.webContents, url);
             await pause(600);
             const submitted = await fill(hidden.webContents, source.id, query);
             await pause(3000);
@@ -199,10 +208,14 @@ export class SourceWorkspace {
               const followed = await hidden.webContents.executeJavaScript(`(${followAccountingRecord.toString()})(${JSON.stringify(query)})`);
               if (followed) await pause(2500);
             }
-            if (CONTACT_SOURCES.has(source.id)) await followBusiness(hidden.webContents, company);
+            stage = 'переход в карточку';
+            if (CONTACT_SOURCES.has(source.id)) await followBusiness(hidden.webContents, company, source.id);
+            stage = 'чтение сведений';
             result = await snapshot(hidden.webContents, source.id, query, submitted, company);
-          } catch {
-            result = { sourceId: source.id, status: 'unavailable', title: source.name, message: 'Не удалось получить ответ. Это не означает отсутствия сведений.', text: '', tables: [], url, fetchedAt: new Date().toISOString() };
+          } catch (error) {
+            const reason = (error as Error).message?.match(/(?:net::)?ERR_[A-Z_]+|Источник не ответил вовремя/)?.[0] ?? (error as Error).name ?? 'Ошибка';
+            const currentUrl = hidden.isDestroyed() ? url : hidden.webContents.getURL();
+            result = { sourceId: source.id, status: 'unavailable', title: source.name, message: `Не удалось получить ответ: ${stage} (${reason}). Это не означает отсутствия сведений.`, text: '', tables: [], url: permittedNavigation(source.id, currentUrl) ? currentUrl : url, fetchedAt: new Date().toISOString() };
           } finally { this.hidden.delete(hidden); if (!hidden.isDestroyed()) hidden.destroy(); }
           if (this.cancelled) continue;
           results.push(result);

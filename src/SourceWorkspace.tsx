@@ -12,7 +12,7 @@ export default function SourceWorkspace({ sourceId, query, company, referenceUrl
   const [error, setError] = useState('');
   const [saving, setSaving] = useState(false);
   const [attempt, setAttempt] = useState(0);
-  const source = SOURCES.find(item => item.id === sourceId)!;
+  const source = SOURCES.find(item => item.id === sourceId) ?? { name: 'Источник', domain: '' };
   useEffect(() => {
     let disposed = false;
     const unsubscribe = bridge.onSourceState(value => { if (value.sourceId === sourceId) setState(value); });

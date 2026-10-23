@@ -1,10 +1,11 @@
 // Self-contained functions injected only into isolated public business pages.
-export function followCompanyRecord(options: { inn: string; ogrn: string; name?: string; fullName?: string }): boolean {
+export function followCompanyRecord(options: { inn: string; ogrn: string; name?: string; fullName?: string; resolveOnly?: boolean }): boolean | string {
   const ids = [options.inn, options.ogrn].filter(Boolean);
   if (!ids.length || /\/(company|id|ip|entrepreneur)\//.test(location.pathname)) return false;
   const matches = (text: string) => ids.some(id => new RegExp(`(^|\\D)${id}(\\D|$)`).test(text));
   const normalize = (value: string) => value.toLocaleLowerCase('ru').replace(/^(организация|компания|предприятие)\s+/u, '').replace(/общество с ограниченной ответственностью|публичное акционерное общество|акционерное общество|индивидуальный предприниматель/g, ' ').replace(/[^\p{L}\p{N}]+/gu, ' ').split(' ').filter(word => word && !['ооо', 'ао', 'пао', 'оао', 'зао', 'ип'].includes(word)).join(' ');
   const names = [options.name, options.fullName].filter(Boolean).map(value => normalize(value!));
+  const select = (link: HTMLAnchorElement) => { if (options.resolveOnly) return link.href; link.click(); return true; };
   const current = new URL(location.href);
   const boundQuery = ['val', 'query'].some(parameter => ids.includes(current.searchParams.get(parameter) ?? '')) && matches(document.title + ' ' + document.body.innerText.slice(0, 5000));
   const links = Array.from(document.querySelectorAll<HTMLAnchorElement>('main a[href],article a[href],.search-result a[href],.company-item a[href],a[href]'));
@@ -13,7 +14,7 @@ export function followCompanyRecord(options: { inn: string; ogrn: string; name?:
       try { const url = new URL(link.href); return url.origin === location.origin && /^\/(company|id|ip|entrepreneur)\//.test(url.pathname) && !link.closest('footer,header,nav,aside') && Boolean(link.getClientRects().length) && names.includes(normalize(link.innerText)); }
       catch { return false; }
     });
-    if (exact) { exact.click(); return true; }
+    if (exact) return select(exact);
   }
   for (const link of links.slice(0, 1500)) {
     let url: URL;
@@ -23,13 +24,13 @@ export function followCompanyRecord(options: { inn: string; ogrn: string; name?:
     // INN search results can list many branches. Match the exact business name
     // when the directory doesn't repeat the INN in each row, then verify its
     // identifiers again on the destination before accepting any contacts.
-    if (boundQuery && names.includes(normalize(link.innerText))) { link.click(); return true; }
-    if (ids.some(id => url.pathname.includes(id))) { link.click(); return true; }
+    if (boundQuery && names.includes(normalize(link.innerText))) return select(link);
+    if (ids.some(id => url.pathname.includes(id))) return select(link);
     let element: HTMLElement | null = link;
     for (let level = 0; element && level < 5; level++, element = element.parentElement) {
       const text = element.innerText ?? '';
       if (text.length > 8000 || element.matches('body,main')) break;
-      if (matches(text)) { link.click(); return true; }
+      if (matches(text)) return select(link);
     }
   }
   return false;

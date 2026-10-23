@@ -6,7 +6,7 @@ export function registryEmailContacts(text: string): Contact[] {
   const contacts: Contact[] = [];
   // The dedicated registry section belongs to this business. Other mail addresses
   // in an extract may belong to a registrar, signatory or another organization.
-  for (const section of text.matchAll(/(?:сведения об адресе электронной почты|registered e-?mail)[:\s]*([\s\S]{0,400})/gi)) {
+  for (const section of text.matchAll(/(?:сведения\s+об\s+адресе\s+электронной\s+почты|registered e-?mail)[:\s]*([\s\S]{0,400})/gi)) {
     const value = section[1].replace(/\s*@\s*/g, '@');
     for (const email of value.match(/[A-Z0-9.!#$%&'*+\/=^_`{|}~-]+@[A-Z0-9.-]+\.[A-ZА-Я]{2,63}/gi) ?? []) contacts.push({ kind: 'email', value: email });
   }
