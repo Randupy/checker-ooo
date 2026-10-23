@@ -4,6 +4,10 @@ on:
     paths:
       - scripts/diagnose-contacts.mjs
       - scripts/check-contacts-live.mjs
+      - src/shared/contact-dom.ts
+      - src/shared/contacts.ts
+      - electron/extract-contacts.ts
+      - electron/source-workspace.ts
       - .github/workflows/contacts.yml
   workflow_dispatch:
 permissions:
@@ -22,4 +26,5 @@ jobs:
       - run: npm run setup:desktop
       - run: npm run build
       - run: node scripts/diagnose-contacts.mjs
+        if: github.event_name == 'workflow_dispatch'
       - run: node scripts/check-contacts-live.mjs

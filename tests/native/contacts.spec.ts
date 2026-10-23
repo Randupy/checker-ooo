@@ -4,7 +4,7 @@ import path from 'node:path';
 import os from 'node:os';
 import { minimalPdf, registryRow } from '../fixtures/registry';
 
-test('контакты из карточки и PDF: отображение, источник внутри приложения, CSV и сохранение после перезапуска', async () => {
+test('контакты из карточки и PDF: отображение, источник внутри приложения, CSV и сохранение после перезапуска', async ({}, testInfo) => {
   const directory = await mkdtemp(path.join(os.tmpdir(), 'dosye-contacts-'));
   let app: ElectronApplication | undefined;
   const launch = () => _electron.launch({ executablePath: process.env.DOSYE_TEST_EXECUTABLE, args: [...(process.platform === 'linux' ? ['--no-sandbox', '--headless', '--ozone-platform=headless'] : []), `--user-data-dir=${directory}`, ...(process.env.DOSYE_TEST_EXECUTABLE ? [] : [path.resolve('dist-electron/main.cjs')])], env: { ...process.env, XDG_CONFIG_HOME: directory } });
@@ -49,6 +49,7 @@ test('контакты из карточки и PDF: отображение, и�
     await expect(panel).toContainText('https://business.example.org/');
     await expect(panel).not.toContainText('support@example.org');
     await expect(panel.getByRole('button', { name: 'Выписка ФНС', exact: true })).toBeVisible();
+    await page.screenshot({ path: testInfo.outputPath('contacts.png') });
     await app.evaluate(({ dialog }, directory) => { dialog.showSaveDialog = async () => ({ canceled: false, filePath: pathJoin(directory, 'contacts.csv') }); function pathJoin(dir: string, name: string) { return dir + '/' + name; } }, directory);
     await page.getByRole('button', { name: 'Таблица CSV' }).click();
     await expect(page.getByRole('status')).toContainText('Карточка экспортирована');
