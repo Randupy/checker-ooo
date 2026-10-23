@@ -19,9 +19,15 @@ try {
   const document = await page.evaluate(company => window.dosye.getExtract(company), company);
   const bytes = Buffer.from(document.base64, 'base64');
   if (bytes.subarray(0, 5).toString() !== '%PDF-' || bytes.length < 1000) throw new Error('Выписка не прошла проверку формата.');
-  console.log(JSON.stringify({ source: 'ФНС', inn: company.inn, records: response.companies.length, pdfBytes: bytes.length, live: true }));
+  const named = await page.evaluate(() => window.dosye.search('ооо "бетонстандарт"'));
+  if (named.issue) throw new Error(`Поиск по названию: ${named.issue.message}`);
+  if (!named.companies.some(item => item.source === 'egrul' && /бетонстандарт/i.test(item.fullName))) throw new Error('Поиск по названию не вернул ожидаемую запись.');
+  const result = JSON.stringify({ source: 'ФНС', inn: company.inn, records: response.companies.length, pdfBytes: bytes.length, nameRecords: named.companies.length, live: true, platform: process.platform });
+  console.log(result);
+  if (process.env.GITHUB_ACTIONS) console.log(`::notice title=Live search and PDF passed::${result}`);
 } catch (error) {
   console.error(error.message);
+  if (process.env.GITHUB_ACTIONS) console.log(`::warning title=Live search check failed::${error.message.replaceAll('%', '%25').replaceAll('\r', '%0D').replaceAll('\n', '%0A')}`);
   process.exitCode = 1;
 } finally {
   if (app) await app.close();

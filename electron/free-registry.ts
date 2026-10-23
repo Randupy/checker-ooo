@@ -3,7 +3,7 @@ import { companySchema, type Company, type SearchResponse } from '../src/shared/
 import { parseQuery } from '../src/shared/search';
 
 export class RegistryError extends Error {
-  constructor(public kind: 'captcha' | 'unavailable', message: string) { super(message); }
+  constructor(public kind: 'captcha' | 'unavailable', message: string, public retryable = false) { super(message); }
 }
 const rowSchema = z.object({
   i: z.string(), o: z.string().optional(), n: z.string(), c: z.string().optional(),
@@ -15,7 +15,23 @@ const rowsSchema = z.object({ rows: z.array(rowSchema).max(1000) });
 export type RegistryRow = z.infer<typeof rowSchema>;
 export type Fetcher = (url: string, options?: RequestInit) => Promise<Response>;
 const BASE = 'https://egrul.nalog.ru/';
+const OFFICIAL_ORIGINS = [BASE, 'https://egrul.nalog.gov.ru/'];
 const pause = (ms: number) => new Promise<void>(resolve => setTimeout(resolve, ms));
+
+function connectionError(error: unknown, base: string): RegistryError {
+  const name = error instanceof Error ? error.name : '';
+  const message = error instanceof Error ? error.message : '';
+  // Only disclose a bounded network code, never arbitrary exception text/URLs/tokens.
+  const code = message.match(/\bERR_[A-Z_]{1,80}\b/)?.[0]
+    ?? (['TimeoutError', 'AbortError'].includes(name) ? 'ERR_TIMED_OUT' : 'ERR_NETWORK');
+  const host = new URL(base).hostname;
+  const reason = code.includes('CERT_') ? 'Не удалось проверить сертификат ФНС. Проверьте дату Windows и доверенные сертификаты системы.'
+    : /PROXY|TUNNEL/.test(code) ? 'Не удалось подключиться к ФНС через прокси. Проверьте настройки прокси Windows.'
+      : /TIMED_OUT|TIMEOUT/.test(code) ? 'ФНС не ответила вовремя.'
+        : code.includes('NAME_NOT_RESOLVED') ? 'Не удалось определить адрес ФНС. Проверьте DNS и подключение.'
+          : 'Соединение с ФНС прервано. Проверьте доступность реестра в вашей сети.';
+  return new RegistryError('unavailable', `${reason} (${host}: ${code})`, true);
+}
 
 export function registryDate(value: string | undefined): number | null {
   const match = value?.match(/^(\d{2})\.(\d{2})\.(\d{4})$/);
@@ -59,16 +75,18 @@ export class FreeRegistry {
         if (canonical.protocol === 'https:' && ['egrul.nalog.ru', 'egrul.nalog.gov.ru'].includes(canonical.hostname)) this.base = canonical.origin + '/';
       }
       if ([403, 429].includes(response.status)) throw new RegistryError('captcha', 'ФНС ограничила автоматический запрос. Откройте реестр внутри приложения, выполните проверку и поиск.');
-      if (!response.ok) throw new RegistryError('unavailable', `ФНС не ответила на запрос (HTTP ${response.status}).`);
+      if (!response.ok) throw new RegistryError('unavailable', `ФНС не ответила на запрос (${new URL(this.base).hostname}: HTTP ${response.status}).`, response.status >= 500);
       return response;
     } catch (error) {
       if (error instanceof RegistryError) throw error;
-      throw new RegistryError('unavailable', 'Нет соединения с egrul.nalog.ru. Проверьте интернет и доступность ФНС. Результаты не получены.');
+      throw connectionError(error, this.base);
     }
   }
   private async json(path: string, options?: RequestInit): Promise<Record<string, unknown>> {
     const response = await this.request(path, options);
-    const text = await response.text();
+    let text: string;
+    try { text = await response.text(); }
+    catch (error) { throw connectionError(error, this.base); }
     if (text.length > 5_000_000) throw new RegistryError('unavailable', 'Ответ ФНС слишком большой. Уточните название или введите ИНН.');
     let value: Record<string, unknown>;
     try { value = z.record(z.string(), z.unknown()).parse(JSON.parse(text)); }
@@ -95,10 +113,23 @@ export class FreeRegistry {
   async search(input: string, page = 1): Promise<SearchResponse> {
     const { query } = parseQuery(input);
     if (!Number.isSafeInteger(page) || page < 1 || page > 1000) throw new Error('Некорректный номер страницы.');
-    // Establish the same anonymous session as the official form; no API key.
-    await this.request('');
+    // POST works without loading the landing page. That GET can stall independently
+    // and used to prevent every search, even when the search endpoint was healthy.
     const body = new URLSearchParams({ query, page: String(page), region: '', vyp3CaptchaToken: '', PreventChromeAutocomplete: '' });
-    const started = await this.json('', { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: body.toString() });
+    const options = { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: body.toString() };
+    let started: Record<string, unknown>;
+    try { started = await this.json('', options); }
+    catch (error) {
+      if (!(error instanceof RegistryError) || !error.retryable) throw error;
+      const original = this.base;
+      this.base = OFFICIAL_ORIGINS.find(origin => origin !== original)!;
+      try { started = await this.json('', options); }
+      catch (fallbackError) {
+        if (!(fallbackError instanceof RegistryError) || !fallbackError.retryable) throw fallbackError;
+        this.base = original;
+        throw new RegistryError('unavailable', `${error.message} ${fallbackError.message}`);
+      }
+    }
     const searchToken = token(started.t);
     for (let attempt = 0; attempt < 12; attempt++) {
       const result = await this.json(`search-result/${searchToken}?r=${Date.now()}`);

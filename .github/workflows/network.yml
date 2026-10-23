@@ -24,3 +24,5 @@ jobs:
       - run: npm run setup:desktop
       - run: npm run build
       - run: node scripts/diagnose-network.mjs
+      - run: node scripts/check-live.mjs
+        if: runner.os == 'Windows'
