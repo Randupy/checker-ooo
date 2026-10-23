@@ -10,6 +10,7 @@ import { bridge } from './bridge';
 import { EMPTY_STATE, type AppState, type Company, type SearchResponse } from './shared/model';
 import { SOURCES, CATEGORY_LABELS, type Category, type Source } from './shared/sources';
 import { DEMO } from './shared/demo';
+import { version as appVersion } from '../package.json';
 
 type Page = 'search' | 'favorites' | 'history' | 'sources' | 'settings';
 type Tab = 'overview' | 'sources' | 'raw';
@@ -187,7 +188,7 @@ export default function App() {
       <div className="sidebar-bottom">
         <div className="sidebar-note"><span className="sidebar-note-icon"><ShieldCheck size={20} /></span><h3>Факты для ваших решений</h3><p>Проверяйте партнёров.<br />Сохраняйте важное.</p><button onClick={() => setHelp(true)}>Как это работает <ArrowUpRight size={14} /></button></div>
         <button className={`nav-item settings-nav ${page === 'settings' ? 'active' : ''}`} onClick={() => navigate('settings')}><Settings2 size={19} /><span>Настройки</span></button>
-        <div className="sidebar-version"><span className="mini-logo">д.</span><div>Досье для Windows<span>Версия 1.0.0</span></div><span className="local-dot" title="Локальное рабочее пространство" /></div>
+        <div className="sidebar-version"><span className="mini-logo">д.</span><div>Досье для Windows<span>Версия {appVersion}</span></div><span className="local-dot" title="Локальное рабочее пространство" /></div>
       </div>
     </aside>
 
@@ -257,7 +258,7 @@ export default function App() {
             <div className="settings-provider-footer"><span>Получите ключ в личном кабинете <strong>dadata.ru</strong>, раздел API. Доступ и лимиты зависят от тарифа.</span>{state.hasApiKey && <button className="text-button destructive" onClick={() => void removeKey()}><Trash2 size={14} />Удалить ключ</button>}</div>
           </section>
           <section className="panel settings-panel local-settings"><div className="panel-heading"><h2>Хранение и конфиденциальность</h2><LockKeyhole size={18} /></div><div className="setting-row"><div><h3>История и избранное</h3><p>{state.desktop ? 'Сохраняются в папке данных Dosye текущего пользователя Windows.' : 'В предпросмотре сохраняются в локальном хранилище браузера.'}</p></div><span className="badge neutral">На устройстве</span></div><div className="setting-row"><div><h3>Поисковые запросы</h3><p>При подключённом API передаются DaData. Внешние сайты получают запрос при переходе в источник.</p></div><ShieldCheck size={20} className="muted" /></div><div className="setting-row"><div><h3>Обновление данных</h3><p>Карточка сохраняет дату получения сведений. Для обновления выполните поиск повторно.</p></div><RefreshCw size={19} className="muted" /></div></section>
-          <div className="about-line"><span className="about-logo">д.</span><div><strong>Досье</strong><span>Версия 1.0.0 · Проверка бизнеса с вниманием к фактам</span></div></div>
+          <div className="about-line"><span className="about-logo">д.</span><div><strong>Досье</strong><span>Версия {appVersion} · Проверка бизнеса с вниманием к фактам</span></div></div>
         </>}
       </main>
     </div>
